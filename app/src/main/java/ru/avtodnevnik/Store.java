@@ -99,6 +99,86 @@ public class Store extends SQLiteOpenHelper {
             j.put("stops",stops);
         }catch(Exception ignored){}return j;
     }
+
+    /**
+     * Route data for the native in-app map. GPS positions are stored locally and do not
+     * require internet. Long gaps and explicitly paused intervals split the polyline,
+     * so the map does not draw a fictitious road between separate journeys.
+     */
+    public synchronized JSONObject mapSnapshot() {
+        JSONObject out=new JSONObject();
+        try {
+            JSONArray segments=new JSONArray();
+            JSONArray stops=new JSONArray();
+            out.put("segments",segments);
+            out.put("stops",stops);
+            long id=active();
+            SQLiteDatabase db=getReadableDatabase();
+            if(id==0){
+                try(Cursor cur=db.rawQuery("SELECT id FROM trips ORDER BY id DESC LIMIT 1",null)){
+                    if(cur.moveToFirst()) id=cur.getLong(0);
+                }
+            }
+            if(id==0) return out;
+            String idArg=Long.toString(id);
+            java.util.ArrayList<long[]> pauses=new java.util.ArrayList<>();
+            try(Cursor cur=db.rawQuery("SELECT started, COALESCE(ended,?) FROM breaks WHERE trip_id=? ORDER BY started",
+                    new String[]{Long.toString(System.currentTimeMillis()),idArg})){
+                while(cur.moveToNext()) pauses.add(new long[]{cur.getLong(0),cur.getLong(1)});
+            }
+            try(Cursor cur=db.rawQuery("SELECT t,lat,lon FROM points WHERE trip_id=? ORDER BY id ASC",
+                    new String[]{idArg})){
+                int total=cur.getCount();
+                int stride=Math.max(1,(total+2999)/3000);
+                JSONArray line=new JSONArray();
+                long previous=0;
+                int index=0;
+                int pauseIndex=0;
+                while(cur.moveToNext()){
+                    int pointIndex=index++;
+                    if(pointIndex%stride!=0 && pointIndex!=total-1) continue;
+                    long timestamp=cur.getLong(0);
+                    double lat=cur.getDouble(1), lon=cur.getDouble(2);
+                    if(lat < -90 || lat > 90 || lon < -180 || lon > 180)continue;
+                    while(pauseIndex<pauses.size() && pauses.get(pauseIndex)[1]<previous)pauseIndex++;
+                    boolean crossedPause=false;
+                    for(int k=pauseIndex;k<pauses.size();k++){
+                        long[] pause=pauses.get(k);
+                        if(pause[0]>timestamp)break;
+                        if(previous>0 && previous<=pause[1] && timestamp>=pause[0]){
+                            crossedPause=true;break;
+                        }
+                    }
+                    if(previous>0 && (timestamp-previous>180000 || crossedPause)){
+                        if(line.length()>0)segments.put(line);
+                        line=new JSONArray();
+                    }
+                    JSONArray point=new JSONArray();
+                    point.put(lat);point.put(lon);
+                    line.put(point);
+                    previous=timestamp;
+                }
+                if(line.length()>0)segments.put(line);
+            }
+            try(Cursor cur=db.rawQuery("SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note FROM stops WHERE trip_id=? ORDER BY arrival",
+                    new String[]{idArg})){
+                while(cur.moveToNext()){
+                    JSONObject stop=new JSONObject();
+                    stop.put("id",cur.getLong(0));
+                    stop.put("arrival",fmt(cur.getLong(1)));
+                    long ended=cur.getLong(2);
+                    stop.put("duration",Math.max(0,((ended==0?System.currentTimeMillis():ended)-cur.getLong(1))/60000));
+                    stop.put("lat",cur.getDouble(3));
+                    stop.put("lon",cur.getDouble(4));
+                    stop.put("excluded",cur.getInt(5)!=0);
+                    stop.put("note",cur.getString(6));
+                    stops.put(stop);
+                }
+            }
+        } catch(Exception ignored) {}
+        return out;
+    }
+
     public void exclude(long id,boolean value){getWritableDatabase().execSQL("UPDATE stops SET excluded=? WHERE id=?",new Object[]{value?1:0,id});}
     public void rename(long id,String text){android.content.ContentValues v=new android.content.ContentValues();v.put("note",text);getWritableDatabase().update("stops",v,"id=?",new String[]{""+id});}
 }
