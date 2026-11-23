@@ -119,6 +119,7 @@ final class WaybillEngine {
         String key=date!=null && date.matches("\\d{4}-\\d{2}-\\d{2}")?date:today();
         long[] bounds=dayRange(key);
         JSONArray rows=new JSONArray();
+        JSONArray periods=new JSONArray();
         JSONObject result=new JSONObject();
         double kmTotal=0, distanceInRows=0;
         long movingMs=0, stoppedMs=0, breakMs=0;
@@ -127,6 +128,7 @@ final class WaybillEngine {
             result.put("date",key);
             result.put("days",days(store));
             result.put("rows",rows);
+            result.put("periods",periods);
             SQLiteDatabase db=store.getReadableDatabase();
             String sessionsQuery="SELECT id,started,COALESCE(finished,0),km,moving_ms,"+
                 "start_lat,start_lon,start_city,start_street,start_house,start_status,start_source,start_distance,"+
@@ -138,6 +140,16 @@ final class WaybillEngine {
                     long id=sessions.getLong(0), started=sessions.getLong(1), ended=sessions.getLong(2);
                     kmTotal+=sessions.getDouble(3);movingMs+=sessions.getLong(4);
                     long now=System.currentTimeMillis();
+                    JSONObject period=new JSONObject();
+                    period.put("number",sessionCount);
+                    period.put("tripId",id);
+                    period.put("startedMs",started);
+                    period.put("finishedMs",ended);
+                    period.put("started",clock(started));
+                    period.put("finished",ended==0?"идёт":clock(ended));
+                    period.put("km",Math.round(sessions.getDouble(3)*100.0)/100.0);
+                    period.put("moving",sessions.getLong(4)/60000);
+                    periods.put(period);
 
                     long firstTime=0,lastTime=0;
                     double firstLat=0,firstLon=0,lastLat=0,lastLon=0;
@@ -162,6 +174,7 @@ final class WaybillEngine {
                             sessions.getInt(18),val(sessions,19),sessions.getDouble(20),lastLat,lastLon);
                     long departed=started;
                     boolean stoppedCurrently=false;
+                    int rowsAtPeriodStart=rows.length();
                     try(Cursor stops=db.rawQuery(
                         "SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note,city,street,house,status,source,distance "+
                         "FROM stops WHERE trip_id=? ORDER BY arrival",
@@ -176,8 +189,10 @@ final class WaybillEngine {
                             if(arrival>=departed){
                                 double distance=intervalDistance(db,id,departed,arrival);
                                 distanceInRows+=distance;
-                                addRow(rows,rows.length()+1,id,departed,arrival,origin,stop,
+                                JSONObject entry=addRow(rows,rows.length()+1,id,departed,arrival,origin,stop,
                                     distance,dwell,val(stops,6),departure==0);
+                                entry.put("period",sessionCount);
+                                entry.put("gps",lastTime>0);
                             }
                             origin=stop;
                             if(departure==0){stoppedCurrently=true;departed=now;}
@@ -195,12 +210,31 @@ final class WaybillEngine {
                                     lastLat,lastLon,d);
                             isNewPlace=d[0]>=50 || distance>0.08;
                         }
-                        if(!hasStops || isNewPlace){
+                        // Each recording interval must produce a visible journal line,
+                        // even if the driver stayed still or moved less than 50 metres.
+                        if(!hasStops || isNewPlace || rows.length()==rowsAtPeriodStart){
                             distanceInRows+=distance;
-                            addRow(rows,rows.length()+1,id,departed,ended!=0?ended:lastTime,
-                                   origin,destination,distance,0,ended!=0?"Завершение дня":"В пути",false);
+                            JSONObject entry=addRow(rows,rows.length()+1,id,departed,
+                                ended!=0?ended:Math.max(lastTime,departed),origin,destination,
+                                distance,0,ended!=0?"Завершение рабочего периода":"Запись продолжается",false);
+                            entry.put("period",sessionCount);
+                            entry.put("gps",true);
                         }
                     }
+                    // Never discard a manually started work period just because
+                    // GPS was unavailable or there was no qualifying 5-minute stop.
+                    if(rows.length()==rowsAtPeriodStart){
+                        JSONObject entry=addRow(rows,rows.length()+1,id,started,
+                            ended!=0?ended:now,origin,destination,
+                            sessions.getDouble(3),0,
+                            lastTime==0?"Нет GPS-точек. Рабочий период сохранён.":"Рабочий период без выявленных остановок.",
+                            ended==0);
+                        entry.put("period",sessionCount);
+                        entry.put("gps",lastTime>0);
+                        distanceInRows+=sessions.getDouble(3);
+                    }
+                    period.put("legs",rows.length()-rowsAtPeriodStart);
+                    period.put("gpsPointsAvailable",lastTime>0);
                     try(Cursor rest=db.rawQuery(
                         "SELECT started,COALESCE(ended,?) FROM breaks WHERE trip_id=?",
                         new String[]{""+now,""+id})){
@@ -216,10 +250,13 @@ final class WaybillEngine {
             totals.put("stoppedMinutes",stoppedMs/60000);
             totals.put("breakMinutes",breakMs/60000);
             totals.put("sessions",sessionCount);
+            totals.put("periods",periods.length());
             totals.put("rows",rows.length());
             result.put("total",totals);
         }catch(Exception e){
-            try{result.put("error",e.getClass().getSimpleName());}catch(Exception ignored){}
+            try{
+                result.put("error",e.getClass().getSimpleName()+": "+(e.getMessage()==null?"":e.getMessage()));
+            }catch(Exception ignored){}
         }
         return result;
     }
