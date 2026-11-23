@@ -302,20 +302,44 @@ public class Store extends SQLiteOpenHelper {
      * so the map does not draw a fictitious road between separate journeys.
      */
     public synchronized JSONObject mapSnapshot() {
+        JSONObject all=new JSONObject();
+        try{
+            JSONArray segments=new JSONArray(),stops=new JSONArray();
+            all.put("segments",segments);all.put("stops",stops);
+            SQLiteDatabase db=getReadableDatabase();
+            long[] window=WaybillEngine.dayRange(WaybillEngine.today());
+            try(Cursor cnt=db.rawQuery("SELECT COUNT(*) FROM trips WHERE started>=? AND started<?",
+                new String[]{""+window[0],""+window[1]})){
+                if(cnt.moveToFirst() && cnt.getInt(0)==0){
+                    try(Cursor latest=db.rawQuery("SELECT MAX(started) FROM trips",null)){
+                        if(latest.moveToFirst()&&!latest.isNull(0)){
+                            String day=new SimpleDateFormat("yyyy-MM-dd",Locale.ROOT)
+                                .format(new Date(latest.getLong(0)));
+                            window=WaybillEngine.dayRange(day);
+                        }
+                    }
+                }
+            }
+            try(Cursor periods=db.rawQuery("SELECT id FROM trips WHERE started>=? AND started<? ORDER BY started",
+                new String[]{""+window[0],""+window[1]})){
+                while(periods.moveToNext()){
+                    JSONObject single=singleTripMapSnapshot(periods.getLong(0));
+                    JSONArray pieces=single.optJSONArray("segments"),marks=single.optJSONArray("stops");
+                    if(pieces!=null)for(int i=0;i<pieces.length();i++)segments.put(pieces.optJSONArray(i));
+                    if(marks!=null)for(int i=0;i<marks.length();i++)stops.put(marks.optJSONObject(i));
+                }
+            }
+        }catch(Exception ignored){}
+        return all;
+    }
+    private JSONObject singleTripMapSnapshot(long id) {
         JSONObject out=new JSONObject();
         try {
             JSONArray segments=new JSONArray();
             JSONArray stops=new JSONArray();
             out.put("segments",segments);
             out.put("stops",stops);
-            long id=active();
             SQLiteDatabase db=getReadableDatabase();
-            if(id==0){
-                try(Cursor cur=db.rawQuery("SELECT id FROM trips ORDER BY id DESC LIMIT 1",null)){
-                    if(cur.moveToFirst()) id=cur.getLong(0);
-                }
-            }
-            if(id==0) return out;
             String idArg=Long.toString(id);
             java.util.ArrayList<long[]> pauses=new java.util.ArrayList<>();
             try(Cursor cur=db.rawQuery("SELECT started, COALESCE(ended,?) FROM breaks WHERE trip_id=? ORDER BY started",
