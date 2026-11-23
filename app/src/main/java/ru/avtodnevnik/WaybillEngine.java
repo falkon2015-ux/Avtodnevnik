@@ -51,12 +51,12 @@ final class WaybillEngine {
         return s==null?"":s;
     }
     private static JSONObject place(String kind,long id,String city,String street,String house,
-                                    int status,double lat,double lon){
+                                    int status,String source,double addressDistance,double lat,double lon){
         JSONObject p=new JSONObject();
         try {
             p.put("kind",kind);p.put("id",id);
             p.put("city",city);p.put("street",street);p.put("house",house);
-            p.put("status",status);
+            p.put("status",status);p.put("source",source==null?"":source);p.put("distanceMetres",addressDistance);
             p.put("lat",lat);p.put("lon",lon);
             p.put("complete",!city.isEmpty()&&!street.isEmpty()&&!house.isEmpty());
             StringBuilder sb=new StringBuilder();
@@ -64,8 +64,8 @@ final class WaybillEngine {
             if(!street.isEmpty()){if(sb.length()>0)sb.append(", ");sb.append(street);}
             if(!house.isEmpty()){if(sb.length()>0)sb.append(", ");sb.append("д. ").append(house);}
             if(sb.length()==0){
-                if(lat==0&&lon==0)sb.append("Нет GPS-координат");
-                else sb.append(String.format(Locale.US,"Координаты: %.5f, %.5f",lat,lon));
+                if(status==1)sb.append("Поиск адреса рядом со стоянкой");
+                else sb.append("Адрес в радиусе 40 м не найден");
             }
             p.put("label",sb.toString());
         }catch(Exception ignored){}
@@ -129,8 +129,8 @@ final class WaybillEngine {
             result.put("rows",rows);
             SQLiteDatabase db=store.getReadableDatabase();
             String sessionsQuery="SELECT id,started,COALESCE(finished,0),km,moving_ms,"+
-                "start_lat,start_lon,start_city,start_street,start_house,start_status,"+
-                "end_lat,end_lon,end_city,end_street,end_house,end_status "+
+                "start_lat,start_lon,start_city,start_street,start_house,start_status,start_source,start_distance,"+
+                "end_lat,end_lon,end_city,end_street,end_house,end_status,end_source,end_distance "+
                 "FROM trips WHERE started>=? AND started<? ORDER BY started ASC";
             try(Cursor sessions=db.rawQuery(sessionsQuery,new String[]{""+bounds[0],""+bounds[1]})){
                 while(sessions.moveToNext()){
@@ -156,14 +156,14 @@ final class WaybillEngine {
                         }
                     }
                     JSONObject origin=place("start",id,val(sessions,7),val(sessions,8),val(sessions,9),
-                            sessions.getInt(10),firstLat,firstLon);
+                            sessions.getInt(10),val(sessions,11),sessions.getDouble(12),firstLat,firstLon);
                     JSONObject destination=place(ended==0?"current":"end",id,
-                            val(sessions,13),val(sessions,14),val(sessions,15),
-                            sessions.getInt(16),lastLat,lastLon);
+                            val(sessions,15),val(sessions,16),val(sessions,17),
+                            sessions.getInt(18),val(sessions,19),sessions.getDouble(20),lastLat,lastLon);
                     long departed=started;
                     boolean stoppedCurrently=false;
                     try(Cursor stops=db.rawQuery(
-                        "SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note,city,street,house,status "+
+                        "SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note,city,street,house,status,source,distance "+
                         "FROM stops WHERE trip_id=? ORDER BY arrival",
                         new String[]{""+id})){
                         while(stops.moveToNext()){
@@ -172,7 +172,7 @@ final class WaybillEngine {
                             long dwell=Math.max(0,(departure==0?now:departure)-arrival);
                             stoppedMs+=dwell;
                             JSONObject stop=place("stop",stopId,val(stops,7),val(stops,8),val(stops,9),
-                                    stops.getInt(10),stops.getDouble(3),stops.getDouble(4));
+                                    stops.getInt(10),val(stops,11),stops.getDouble(12),stops.getDouble(3),stops.getDouble(4));
                             if(arrival>=departed){
                                 double distance=intervalDistance(db,id,departed,arrival);
                                 distanceInRows+=distance;
