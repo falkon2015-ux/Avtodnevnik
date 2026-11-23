@@ -6,6 +6,9 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 <uses-permission android:name="android.permission.INTERNET"/>
+<queries>
+    <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>
+</queries>
 <application android:allowBackup="false" android:label="Автодневник" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
 <activity android:name=".RouteMapActivity" android:exported="false"/>
 <activity android:name=".WaybillActivity" android:exported="false"/>
