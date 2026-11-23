@@ -167,8 +167,8 @@ th:nth-child(3),th:nth-child(5){width:212px}th:nth-child(6){width:58px}th:nth-ch
 </div>
 <div class="info">Все семь дней сохраняются отдельно. Нажмите на дату, чтобы открыть маршруты и исправить адреса.</div>
 <div class="table-scroll"><table style="min-width:720px"><thead><tr>
-<th style="width:94px">День</th><th>Дата</th><th>Рейсы</th><th>Км</th><th>Движение</th><th>Стоянки</th><th>Ожидание</th>
-</tr></thead><tbody id="weekRows"><tr><td colspan="7" class="empty">Загрузка недели</td></tr></tbody></table></div>
+<th style="width:94px">День</th><th>Дата</th><th>Периоды</th><th>Записи</th><th>Км</th><th>Движение</th><th>Стоянки</th><th>Ожидание</th>
+</tr></thead><tbody id="weekRows"><tr><td colspan="8" class="empty">Загрузка недели</td></tr></tbody></table></div>
 <div class="actions"><button class="btn primary" onclick="Sheet.exportWeek(weekDate)">↓ Сохранить неделю в Excel (.xlsx)</button></div>
 <div class="muted" id="weekTotal" style="margin-top:9px"></div>
 </section>
@@ -234,10 +234,10 @@ function refreshWeek(){
    let list=w.days||[];
    el('weekRows').innerHTML=list.map(d=>'<tr><td><button class="weekdayButton" onclick="selectDay(\''+d.date+'\')">'+esc(d.weekday)+'</button></td>'+
      '<td>'+dateLabel(d.date)+'</td>'+
-     '<td>'+d.legs+'</td><td><b>'+Number(d.km).toFixed(1)+'</b></td>'+
+     '<td><b>'+d.sessions+'</b></td><td>'+d.legs+'</td><td><b>'+Number(d.km).toFixed(1)+'</b></td>'+
      '<td>'+time(d.moving)+'</td><td>'+time(d.stopped)+'</td><td>'+time(d.breaks)+'</td></tr>').join('');
    let t=w.total||{};
-   el('weekTotal').textContent='Итого за неделю: '+Number(t.km||0).toFixed(1)+' км · '+(t.legs||0)+' участков маршрута';
+   el('weekTotal').textContent='Итого за неделю: '+Number(t.km||0).toFixed(1)+' км · '+(t.sessions||0)+' рабочих периодов · '+(t.legs||0)+' записей маршрута';
  }catch(e){el('weekTotal').textContent='Не удалось загрузить недельный журнал: '+e.message}
 }
 function placeCell(p){
