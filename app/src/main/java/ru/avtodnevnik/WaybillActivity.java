@@ -16,12 +16,14 @@ import java.nio.charset.StandardCharsets;
 public class WaybillActivity extends Activity {
     private static final int SAVE_CSV=801;
     private Store store;
+    private VoiceGuide voice;
     private WebView web;
     private String csvDate=WaybillEngine.today();
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         store=new Store(this);
+        voice=new VoiceGuide(this);
         web=new WebView(this);
         web.setBackgroundColor(0xffedf5f2);
         web.getSettings().setJavaScriptEnabled(true);
@@ -39,7 +41,7 @@ public class WaybillActivity extends Activity {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("text/csv");
         intent.putExtra(Intent.EXTRA_TITLE,"Avtodnevnik_"+csvDate+".csv");
-        try{startActivityForResult(intent,SAVE_CSV);}
+        try{voice.say("Выберите место для сохранения путевого журнала.");startActivityForResult(intent,SAVE_CSV);}
         catch(Exception e){Toast.makeText(this,"Нет приложения для сохранения CSV",Toast.LENGTH_LONG).show();}
     }
     @Override protected void onActivityResult(int code,int result,Intent data){
@@ -53,10 +55,12 @@ public class WaybillActivity extends Activity {
             os.write(WaybillEngine.csv(store,csvDate).getBytes(StandardCharsets.UTF_8));
             os.flush();
             Toast.makeText(this,"Путевой журнал CSV сохранён",Toast.LENGTH_LONG).show();
+            voice.say("Путевой журнал сохранён.");
         }catch(Exception e){
             Toast.makeText(this,"Ошибка сохранения: "+e.getMessage(),Toast.LENGTH_LONG).show();
         }
     }
+    @Override protected void onDestroy(){if(voice!=null)voice.release();super.onDestroy();}
     public class Bridge {
         @JavascriptInterface public String days(){return store.reportDays().toString();}
         @JavascriptInterface public String data(String date){
@@ -64,11 +68,11 @@ public class WaybillActivity extends Activity {
             return store.dayReport(date).toString();
         }
         @JavascriptInterface public void edit(String kind,String id,String city,String street,String house){
-            try{store.editAddress(kind,Long.parseLong(id),city,street,house);}
+            try{store.editAddress(kind,Long.parseLong(id),city,street,house);voice.say("Адрес сохранён.");}
             catch(Exception ignored){}
         }
         @JavascriptInterface public void retry(String kind,String id){
-            try{store.retryAddress(kind,Long.parseLong(id));}
+            try{store.retryAddress(kind,Long.parseLong(id));voice.say("Повторяю определение адреса.");}
             catch(Exception ignored){}
         }
         @JavascriptInterface public void export(String date){runOnUiThread(()->saveCsv(date));}
