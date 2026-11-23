@@ -14,14 +14,42 @@ import java.util.Locale;
 
 public class Store extends SQLiteOpenHelper {
     private final SharedPreferences prefs;
-    public Store(Context c) { super(c,"avtodnevnik.db",null,2); prefs=c.getSharedPreferences("record",0); }
+    private final Context appContext;
+    public Store(Context c) {
+        super(c,"avtodnevnik.db",null,3);
+        appContext=c.getApplicationContext();
+        prefs=c.getSharedPreferences("record",0);
+    }
+    private static String[] addressColumns(String prefix){
+        return new String[]{prefix+"city TEXT DEFAULT ''",prefix+"street TEXT DEFAULT ''",
+             prefix+"house TEXT DEFAULT ''",prefix+"status INTEGER DEFAULT 0"};
+    }
+    private static void upgradeAddress(SQLiteDatabase db,String table,String prefix){
+        for(String field:addressColumns(prefix))db.execSQL("ALTER TABLE "+table+" ADD COLUMN "+field);
+    }
+
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE trips(id INTEGER PRIMARY KEY AUTOINCREMENT, started INTEGER NOT NULL, finished INTEGER, km REAL DEFAULT 0, moving_ms INTEGER DEFAULT 0)");
         db.execSQL("CREATE TABLE points(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER, t INTEGER,lat REAL,lon REAL,accuracy REAL,speed REAL)");
         db.execSQL("CREATE TABLE stops(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER,arrival INTEGER,departure INTEGER,lat REAL,lon REAL,excluded INTEGER DEFAULT 0,note TEXT DEFAULT '')");
         db.execSQL("CREATE TABLE breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");
+        for(String field:new String[]{"start_lat REAL", "start_lon REAL", "end_lat REAL", "end_lon REAL"}){
+            db.execSQL("ALTER TABLE trips ADD COLUMN "+field);
+        }
+        upgradeAddress(db,"trips","start_");
+        upgradeAddress(db,"trips","end_");
+        upgradeAddress(db,"stops","");
     }
-    @Override public void onUpgrade(SQLiteDatabase db,int oldV,int newV){if(oldV<2)db.execSQL("CREATE TABLE IF NOT EXISTS breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");}
+    @Override public void onUpgrade(SQLiteDatabase db,int oldV,int newV){
+        if(oldV<2)db.execSQL("CREATE TABLE IF NOT EXISTS breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");
+        if(oldV<3){
+            for(String field:new String[]{"start_lat REAL","start_lon REAL","end_lat REAL","end_lon REAL"})
+                db.execSQL("ALTER TABLE trips ADD COLUMN "+field);
+            upgradeAddress(db,"trips","start_");
+            upgradeAddress(db,"trips","end_");
+            upgradeAddress(db,"stops","");
+        }
+    }
     public long active(){return prefs.getLong("active",0);}
     public boolean paused(){return active()!=0 && prefs.getLong("pause_id",0)!=0;}
     private void resetPosition(SharedPreferences.Editor e){
@@ -43,7 +71,24 @@ public class Store extends SQLiteOpenHelper {
         SharedPreferences.Editor e=prefs.edit().remove("pause_id");resetPosition(e);e.apply();
     }
     public long begin(){if(active()!=0)return active(); SQLiteDatabase db=getWritableDatabase(); android.content.ContentValues v=new android.content.ContentValues();v.put("started",System.currentTimeMillis());long id=db.insertOrThrow("trips",null,v);prefs.edit().putLong("active",id).remove("anchor_lat").remove("anchor_lon").remove("anchor_t").remove("last_t").remove("last_lat").remove("last_lon").remove("active_stop").apply();return id;}
-    public void finish(){long id=active();if(id==0)return;long now=System.currentTimeMillis();if(paused())resume();long stop=prefs.getLong("active_stop",0);if(stop!=0){getWritableDatabase().execSQL("UPDATE stops SET departure=? WHERE id=?",new Object[]{now,stop});}getWritableDatabase().execSQL("UPDATE trips SET finished=? WHERE id=?",new Object[]{now,id});prefs.edit().clear().apply();}
+    public synchronized void finish(){
+        long id=active();if(id==0)return;
+        long now=System.currentTimeMillis();
+        if(paused())resume();
+        long stop=prefs.getLong("active_stop",0);
+        SQLiteDatabase db=getWritableDatabase();
+        if(stop!=0)db.execSQL("UPDATE stops SET departure=? WHERE id=?",new Object[]{now,stop});
+        db.execSQL("UPDATE trips SET finished=? WHERE id=?",new Object[]{now,id});
+        // Resolve the final address once, from the most recent valid GPS position.
+        try(Cursor c=db.rawQuery("SELECT lat,lon FROM points WHERE trip_id=? ORDER BY t DESC LIMIT 1",new String[]{""+id})){
+            if(c.moveToFirst()){
+                double lat=c.getDouble(0),lon=c.getDouble(1);
+                db.execSQL("UPDATE trips SET end_lat=?,end_lon=? WHERE id=?",new Object[]{lat,lon,id});
+                resolveAddress("end",id,lat,lon);
+            }
+        }
+        prefs.edit().clear().apply();
+    }
     public synchronized void onFix(Location p){
         long trip=active();if(trip==0 || paused() || p.getAccuracy()>55 || p.getAccuracy()<=0)return;
         long t=p.getTime()>0?p.getTime():System.currentTimeMillis();
@@ -59,6 +104,13 @@ public class Store extends SQLiteOpenHelper {
         android.content.ContentValues point=new android.content.ContentValues();
         point.put("trip_id",trip);point.put("t",t);point.put("lat",p.getLatitude());point.put("lon",p.getLongitude());point.put("accuracy",p.getAccuracy());point.put("speed",p.hasSpeed()?p.getSpeed():0);
         SQLiteDatabase db=getWritableDatabase();db.insert("points",null,point);
+        // A new session gets an address at its first accurate GPS fix.
+        try(Cursor c=db.rawQuery("SELECT start_lat FROM trips WHERE id=?",new String[]{""+trip})){
+            if(c.moveToFirst() && c.isNull(0)){
+                db.execSQL("UPDATE trips SET start_lat=?,start_lon=? WHERE id=?",new Object[]{p.getLatitude(),p.getLongitude(),trip});
+                resolveAddress("start",trip,p.getLatitude(),p.getLongitude());
+            }
+        }
         float speed=p.hasSpeed()?p.getSpeed():0;
         if(delta>0){if(dist>Math.max(6,p.getAccuracy()*0.35) && dist<120 && dist/delta*1000<65)db.execSQL("UPDATE trips SET km=km+? WHERE id=?",new Object[]{dist/1000.0,trip});if(speed>1.5 && delta<120000)db.execSQL("UPDATE trips SET moving_ms=moving_ms+? WHERE id=?",new Object[]{delta,trip});}
         long anchorT=prefs.getLong("anchor_t",0);
@@ -75,7 +127,9 @@ public class Store extends SQLiteOpenHelper {
             e.putLong("anchor_t",t).putLong("anchor_lat",Double.doubleToRawLongBits(p.getLatitude())).putLong("anchor_lon",Double.doubleToRawLongBits(p.getLongitude()));
         } else if(activeStop==0 && t-anchorT>=300000 && speed<1.5){
             android.content.ContentValues st=new android.content.ContentValues();st.put("trip_id",trip);st.put("arrival",anchorT);st.put("lat",aLat);st.put("lon",aLon);
-            long sid=db.insert("stops",null,st);e.putLong("active_stop",sid);
+            long sid=db.insert("stops",null,st);
+            e.putLong("active_stop",sid);
+            if(sid>0)resolveAddress("stop",sid,aLat,aLon);
         }
         e.putLong("last_t",t).putLong("last_lat",Double.doubleToRawLongBits(p.getLatitude())).putLong("last_lon",Double.doubleToRawLongBits(p.getLongitude())).apply();
     }
@@ -99,6 +153,96 @@ public class Store extends SQLiteOpenHelper {
             j.put("stops",stops);
         }catch(Exception ignored){}return j;
     }
+
+
+    /** Address fields are independent: a city does not imply a known street or house. */
+    public synchronized void resolveAddress(String kind,long id,double lat,double lon){
+        String table="stop".equals(kind)?"stops":"trips";
+        String prefix="stop".equals(kind)?"":("end".equals(kind)?"end_":"start_");
+        if(!"stop".equals(kind) && !"start".equals(kind) && !"end".equals(kind))return;
+        android.content.ContentValues pending=new android.content.ContentValues();
+        pending.put(prefix+"status",1);
+        getWritableDatabase().update(table,pending,"id=? AND "+prefix+"status<>4",new String[]{""+id});
+        AddressResolver.resolve(appContext,lat,lon,address->{
+            try{
+                android.content.ContentValues result=new android.content.ContentValues();
+                String city=AddressResolver.city(address),street=AddressResolver.street(address),house=AddressResolver.house(address);
+                result.put(prefix+"city",city);
+                result.put(prefix+"street",street);
+                result.put(prefix+"house",house);
+                result.put(prefix+"status",(!city.isEmpty()||!street.isEmpty()||!house.isEmpty())?2:3);
+                getWritableDatabase().update(table,result,"id=? AND "+prefix+"status<>4",new String[]{""+id});
+            }catch(Exception ignored){}
+        });
+    }
+    public synchronized void editAddress(String kind,long id,String city,String street,String house){
+        if(!"stop".equals(kind)&&!"start".equals(kind)&&!"end".equals(kind))return;
+        String table="stop".equals(kind)?"stops":"trips";
+        String prefix="stop".equals(kind)?"":("end".equals(kind)?"end_":"start_");
+        android.content.ContentValues v=new android.content.ContentValues();
+        v.put(prefix+"city",clean(city));v.put(prefix+"street",clean(street));
+        v.put(prefix+"house",clean(house));v.put(prefix+"status",4);
+        getWritableDatabase().update(table,v,"id=?",new String[]{""+id});
+    }
+    private static String clean(String value){return value==null?"":value.trim().substring(0,Math.min(180,value.trim().length()));}
+    public void retryAddress(String kind,long id){
+        if(!"stop".equals(kind)&&!"start".equals(kind)&&!"end".equals(kind))return;
+        String table="stop".equals(kind)?"stops":"trips";
+        String column="stop".equals(kind)?"":kind+"_";
+        String q="stop".equals(kind)?"SELECT lat,lon FROM stops WHERE id=?":
+            "SELECT "+column+"lat,"+column+"lon FROM trips WHERE id=?";
+        try(Cursor c=getReadableDatabase().rawQuery(q,new String[]{""+id})){
+            if(c.moveToFirst() && !c.isNull(0) && !c.isNull(1))
+                resolveAddress(kind,id,c.getDouble(0),c.getDouble(1));
+        }
+    }
+    /** Populate geocodes for older saved trips after the v2 to v3 database migration. */
+    public void backfillAddresses(String day){
+        long[] range=WaybillEngine.dayRange(day);
+        SQLiteDatabase db=getReadableDatabase();
+        try(Cursor trips=db.rawQuery(
+            "SELECT id,start_lat,end_lat FROM trips WHERE started>=? AND started<? ORDER BY id",
+            new String[]{""+range[0],""+range[1]})){
+            while(trips.moveToNext()){
+                long id=trips.getLong(0);
+                if(trips.isNull(1)){
+                    try(Cursor first=db.rawQuery("SELECT lat,lon FROM points WHERE trip_id=? ORDER BY t LIMIT 1",
+                        new String[]{""+id})){
+                        if(first.moveToFirst()){
+                            double lat=first.getDouble(0),lon=first.getDouble(1);
+                            db.execSQL("UPDATE trips SET start_lat=?,start_lon=? WHERE id=?",new Object[]{lat,lon,id});
+                        }
+                    }
+                }
+                if(trips.isNull(2)){
+                    try(Cursor last=db.rawQuery("SELECT lat,lon FROM points WHERE trip_id=? ORDER BY t DESC LIMIT 1",
+                        new String[]{""+id})){
+                        if(last.moveToFirst()){
+                            db.execSQL("UPDATE trips SET end_lat=?,end_lon=? WHERE id=?",new Object[]{
+                                last.getDouble(0),last.getDouble(1),id});
+                        }
+                    }
+                }
+                try(Cursor candidates=db.rawQuery("SELECT start_lat,start_lon,start_status,end_lat,end_lon,end_status FROM trips WHERE id=?",
+                        new String[]{""+id})){
+                    if(candidates.moveToFirst()){
+                        if(!candidates.isNull(0)&&candidates.getInt(2)==0)
+                            resolveAddress("start",id,candidates.getDouble(0),candidates.getDouble(1));
+                        if(!candidates.isNull(3)&&candidates.getInt(5)==0)
+                            resolveAddress("end",id,candidates.getDouble(3),candidates.getDouble(4));
+                    }
+                }
+                try(Cursor stops=db.rawQuery("SELECT id,lat,lon FROM stops WHERE trip_id=? AND status=0",
+                    new String[]{""+id})){
+                    while(stops.moveToNext()){
+                        resolveAddress("stop",stops.getLong(0),stops.getDouble(1),stops.getDouble(2));
+                    }
+                }
+            }
+        }
+    }
+    public org.json.JSONArray reportDays(){return WaybillEngine.days(this);}
+    public org.json.JSONObject dayReport(String day){return WaybillEngine.report(this,day);}
 
     /**
      * Route data for the native in-app map. GPS positions are stored locally and do not
