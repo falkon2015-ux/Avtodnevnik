@@ -42,7 +42,7 @@ final class WeekJournal {
             JSONArray days=new JSONArray();
             report.put("days",days);
             double km=0;
-            long moving=0,standing=0,breaks=0,legs=0;
+            long moving=0,standing=0,breaks=0,legs=0,periodCount=0;
             for(int i=0;i<keys.length();i++){
                 String key=keys.getString(i);
                 JSONObject day=WaybillEngine.report(store,key);
@@ -69,14 +69,14 @@ final class WeekJournal {
                 days.put(brief);
                 km+=sum.optDouble("km");moving+=sum.optLong("movingMinutes");
                 standing+=sum.optLong("stoppedMinutes");breaks+=sum.optLong("breakMinutes");
-                legs+=sum.optInt("rows");
+                legs+=sum.optInt("rows");periodCount+=sum.optInt("sessions");
             }
             JSONObject summary=new JSONObject();
             summary.put("km",Math.round(km*100)/100.0);
             summary.put("moving",moving);
             summary.put("stopped",standing);
             summary.put("breaks",breaks);
-            summary.put("legs",legs);
+            summary.put("legs",legs);summary.put("sessions",periodCount);
             report.put("total",summary);
         }catch(Exception e){try{report.put("error",e.getClass().getSimpleName());}catch(Exception ignored){}}
         return report;
