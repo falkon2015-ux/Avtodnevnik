@@ -126,7 +126,7 @@ public class RouteMapActivity extends Activity {
         bottom.setOrientation(LinearLayout.VERTICAL);
         bottom.setPadding(dp(16),dp(12),dp(16),dp(18));
         bottom.setBackground(surface(Color.WHITE,20));
-        TextView legend=txt("● Маршрут       ● Стоянки       ● Последняя точка",12,NAVY,true);
+        TextView legend=txt("● Маршрут   ● Стоянки   ● GPS   ·   Дома при приближении",12,NAVY,true);
         bottom.addView(legend);
         TextView info=txt("Нажмите на стоянку и выберите Яндекс Карты или 2ГИС для проверки адреса и номера дома. Детальная карта откроется отдельно.",12,Color.rgb(107,128,132),false);
         info.setPadding(0,dp(9),0,dp(8));
@@ -301,6 +301,8 @@ public class RouteMapActivity extends Activity {
                     final double lat=p.optDouble("lat"),lon=p.optDouble("lon");
                     String name=p.optString("note","");
                     if(name.isEmpty())name="Стоянка №"+number;
+                    String address=p.optString("address","");
+                    if(!address.isEmpty())name+=" · "+address;
                     final String label=name;
                     Button b=new Button(this);
                     b.setAllCaps(false);
@@ -313,7 +315,7 @@ public class RouteMapActivity extends Activity {
                     stopItems.addView(b,bp);
                     b.setOnClickListener(v->{
                         selectedLat=lat;selectedLon=lon;
-                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat,lon),16),700);
+                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat,lon),18.0),700);
                         subtitle.setText(label);
                         voice.say("Показываю остановку на карте.");
                     });
@@ -327,7 +329,7 @@ public class RouteMapActivity extends Activity {
                     // Neutral initial center until the first position is recorded.
                     map.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(50.290,127.535),11));
                 }else if(seen.size()==1){
-                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(seen.get(0),15));
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(seen.get(0),17.5));
                 }else{
                     double minLat=90,maxLat=-90,minLon=180,maxLon=-180;
                     for(LatLng p:seen){
@@ -335,7 +337,7 @@ public class RouteMapActivity extends Activity {
                         minLon=Math.min(minLon,p.getLongitude());maxLon=Math.max(maxLon,p.getLongitude());
                     }
                     if(maxLat-minLat<0.0001 && maxLon-minLon<0.0001){
-                        map.moveCamera(CameraUpdateFactory.newLatLngZoom(seen.get(seen.size()-1),15));
+                        map.moveCamera(CameraUpdateFactory.newLatLngZoom(seen.get(seen.size()-1),17.5));
                     }else{
                         LatLngBounds box=new LatLngBounds.Builder()
                             .include(new LatLng(minLat,minLon))
