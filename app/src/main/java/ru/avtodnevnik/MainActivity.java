@@ -64,6 +64,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void exclude(String id,boolean exclude){try{store.exclude(Long.parseLong(id),exclude);}catch(Exception ignored){}}
         @JavascriptInterface public void rename(String id,String name){try{store.rename(Long.parseLong(id),name);}catch(Exception ignored){}}
         @JavascriptInterface public void openMap(){runOnUiThread(()->startActivity(new Intent(MainActivity.this,RouteMapActivity.class)));}
+        @JavascriptInterface public void openWaybill(){runOnUiThread(()->startActivity(new Intent(MainActivity.this,WaybillActivity.class)));}
         @JavascriptInterface public void exportCsv(){runOnUiThread(()->{
             JSONObject j=store.summary();
             StringBuilder csv=new StringBuilder("Дата;Километраж_км;Время_движения_мин;Стоянки_мин\n");
@@ -90,6 +91,7 @@ h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-te
 <div class="card"><h3>Управление записью</h3><div id="prompt" class="muted">Утром нажмите кнопку и оставьте телефон на зарядке в автомобиле.</div><button id="go" class="primary" onclick="toggle()">▶ Начать рабочий день</button><button id="pause" class="breakbutton" style="display:none" onclick="togglePause()">☕ Перекур / Ожидание задания</button><div id="breaktime" class="muted" style="margin-top:10px">Перерывы: 0 мин</div><div class="muted" style="margin-top:14px">GPS работает при выключенном экране. Данные остаются на устройстве.</div><div id="warning" class="warn"></div></div>
 <div class="card"><h3>Маршрут дня</h3><div class="muted">Улицы, полный GPS-маршрут и точки стоянок на интерактивной карте</div><div class="mapbox"><svg viewBox="0 0 330 175" id="route"><path d="M20 140Q90 70 135 110T300 22" fill="none" stroke="#b3cecc" stroke-width="3" stroke-dasharray="6 6"/></svg><span>Мини-схема GPS-трека</span></div><button class="button" onclick="openMap()">🗺 Открыть карту маршрута</button></div>
 <div class="card"><h3>Остановки</h3><div class="muted">Фиксируются после пяти минут в радиусе 40 м. Ложные можно исключить.</div><div id="stops" style="margin-top:14px" class="muted">Остановок пока нет</div></div>
+<div class="card"><h3>Путевой журнал за сутки</h3><div class="muted">Адреса остановок: город, улица и дом. Таблица времени, пробега и стоянок с исправлением адресов.</div><button class="primary" onclick="Driver.openWaybill()">▦ Открыть путевой журнал</button><div class="muted" style="margin-top:12px">Можно сохранить CSV и открыть в Excel.</div></div>
 <div class="card"><h3>Расход топлива</h3><div class="settings"><label>Л/100 км</label><input id="litres" type="number" min="1" max="40" step=".1" value="8"></div><div class="settings"><label>Цена за литр, ₽</label><input id="price" type="number" min="1" max="300" step=".1" value="65"></div><div class="muted">Оценка по пробегу. Простой с работающим мотором не учитывается.</div></div>
 <div class="card"><h3>Отчёт</h3><p class="muted">Сводка последнего рабочего дня в формате CSV.</p><button class="button" onclick="Driver.exportCsv()">Экспортировать CSV ↗</button></div>
 <div class="footer">АВТОДНЕВНИК · Тестовая версия 0.2</div></main>
