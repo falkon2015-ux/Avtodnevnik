@@ -181,6 +181,7 @@ th:nth-child(3),th:nth-child(5){width:212px}th:nth-child(6){width:58px}th:nth-ch
 <div class="stat"><label>ПЕРЕРЫВЫ / ОЖИДАНИЕ</label><b id="breaks">0 мин</b></div>
 </div>
 <div id="status">Проверяем ближайшие адресные объекты в пределах 40 м. Если адрес не найден, укажите его вручную.</div>
+<div id="periods" style="margin-top:12px"></div>
 </section>
 <section class="card"><h2>Маршрут по точкам</h2>
 <div class="info">Листайте таблицу по горизонтали. Программа показывает адрес, а не GPS-координаты. Адреса без найденного дома отмечены для проверки.</div>
@@ -210,11 +211,11 @@ const time=m=>m>=60?Math.floor(m/60)+' ч '+m%60+' мин':m+' мин';
 const dateLabel=k=>k.split('-').reverse().join('.');
 function makeDates(){
 try{
-  let saved=localStorage.getItem('reportday');
+  // Default to latest recorded day; user can select earlier dates below.
   let dates=JSON.parse(Sheet.days());
   const select=el('day');
   select.innerHTML=dates.map(d=>'<option value="'+esc(d)+'">'+dateLabel(d)+'</option>').join('');
-  if(saved&&dates.includes(saved))select.value=saved;
+  if(dates.length)select.value=dates[0];
 }catch(e){console.log(e)}
 }
 function pickDay(){localStorage.setItem('reportday',el('day').value);refresh()}
@@ -260,15 +261,21 @@ try {
  el('stopped').textContent=time(summary.stoppedMinutes||0);
  el('breaks').textContent=time(summary.breakMinutes||0);
  const rows=state.rows||[];
- el('status').textContent=(summary.sessions||0)+' рабочих сессий · '+rows.length+' участков маршрута · адреса могут требовать уточнения';
- el('rows').innerHTML=rows.length?rows.map(r=>'<tr><td><b>'+r.number+'</b></td>'+
+ el('status').textContent=state.error?'Ошибка отчёта: '+state.error:
+  (summary.sessions||0)+' рабочих периодов · '+rows.length+' записей маршрута';
+ el('periods').innerHTML=(state.periods||[]).map(p=>
+   '<div class="info"><b>Рабочий период №'+p.number+'</b>: '+esc(p.started)+' — '+esc(p.finished)+
+   ' · '+Number(p.km||0).toFixed(2)+' км'+
+   (p.gpsPointsAvailable?'':' · <b>Нет GPS-точек</b>')+
+   '</div>').join('');
+ el('rows').innerHTML=rows.length?rows.map(r=>'<tr><td><b>'+r.number+'</b><br><small>Период '+r.period+'</small></td>'+
    '<td>'+esc(r.departure)+'</td>'+
    '<td>'+placeCell(r.from)+'</td>'+
    '<td>'+esc(r.arrival)+'</td>'+
    '<td>'+placeCell(r.to)+'</td>'+
    '<td><b>'+Number(r.km||0).toFixed(2)+'</b></td>'+
-   '<td>'+time(r.stopMinutes||0)+(r.ongoing?'<br><small>сейчас</small>':'')+'</td></tr>').join(''):
-   '<tr><td colspan="7" class="empty">Пока нет GPS-поездок за этот день</td></tr>';
+   '<td>'+time(r.stopMinutes||0)+(r.ongoing?'<br><small>сейчас</small>':'')+(r.gps===false?'<br><small style="color:#c75d40">Без GPS</small>':'')+'</td></tr>').join(''):
+   '<tr><td colspan="7" class="empty">Рабочих периодов за выбранный день нет</td></tr>';
 }catch(e){el('status').textContent='Ошибка загрузки данных: '+e.message}
 }
 function editAddress(kind,id){
