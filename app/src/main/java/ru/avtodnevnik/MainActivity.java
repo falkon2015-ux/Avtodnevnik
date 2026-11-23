@@ -122,7 +122,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void start(){runOnUiThread(()->MainActivity.this.start());}
         @JavascriptInterface public void pause(){runOnUiThread(()->{if(store.active()!=0 && !store.paused()){store.pause();voice.say("Ожидание задания. Учёт пробега приостановлен.");}refresh();});}
         @JavascriptInterface public void resume(){runOnUiThread(()->{if(store.paused()){store.resume();voice.say("Запись маршрута продолжена.");}refresh();});}
-        @JavascriptInterface public void end(){runOnUiThread(()->{try{startService(new Intent(MainActivity.this,TrackerService.class).setAction("END"));voice.say("Рабочий день завершён. Маршрут сохранён.");}catch(Exception ex){Toast.makeText(MainActivity.this,"Не удалось завершить запись",Toast.LENGTH_LONG).show();}web.postDelayed(()->refresh(),750);});}
+        @JavascriptInterface public void end(){runOnUiThread(()->{try{store.finish();startService(new Intent(MainActivity.this,TrackerService.class).setAction("END"));voice.say("Рабочий день завершён. Маршрут сохранён.");}catch(Exception ex){Toast.makeText(MainActivity.this,"Ошибка сохранения периода: "+ex.getMessage(),Toast.LENGTH_LONG).show();}refresh();});}
         @JavascriptInterface public void exclude(String id,boolean exclude){try{store.exclude(Long.parseLong(id),exclude);}catch(Exception ignored){}}
         @JavascriptInterface public void rename(String id,String name){try{store.rename(Long.parseLong(id),name);}catch(Exception ignored){}}
         @JavascriptInterface public void openMap(){runOnUiThread(()->{voice.say("Открываю карту маршрута");startActivity(new Intent(MainActivity.this,RouteMapActivity.class));});}
