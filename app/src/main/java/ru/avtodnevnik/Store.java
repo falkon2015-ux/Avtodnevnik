@@ -380,7 +380,7 @@ public class Store extends SQLiteOpenHelper {
                 }
                 if(line.length()>0)segments.put(line);
             }
-            try(Cursor cur=db.rawQuery("SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note FROM stops WHERE trip_id=? ORDER BY arrival",
+            try(Cursor cur=db.rawQuery("SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note,city,street,house FROM stops WHERE trip_id=? ORDER BY arrival",
                     new String[]{idArg})){
                 while(cur.moveToNext()){
                     JSONObject stop=new JSONObject();
@@ -392,6 +392,11 @@ public class Store extends SQLiteOpenHelper {
                     stop.put("lon",cur.getDouble(4));
                     stop.put("excluded",cur.getInt(5)!=0);
                     stop.put("note",cur.getString(6));
+                    String city=cur.getString(7),street=cur.getString(8),house=cur.getString(9);
+                    String address=(city==null||city.isEmpty()?"":city+", ")
+                        +(street==null||street.isEmpty()?"":street+", ")
+                        +(house==null||house.isEmpty()?"":"д. "+house);
+                    stop.put("address",address.replaceAll(", $",""));
                     stops.put(stop);
                 }
             }
