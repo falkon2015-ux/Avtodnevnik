@@ -69,8 +69,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void end(){runOnUiThread(()->{try{startService(new Intent(MainActivity.this,TrackerService.class).setAction("END"));voice.say("Рабочий день завершён. Маршрут сохранён.");}catch(Exception ex){Toast.makeText(MainActivity.this,"Не удалось завершить запись",Toast.LENGTH_LONG).show();}web.postDelayed(()->refresh(),750);});}
         @JavascriptInterface public void exclude(String id,boolean exclude){try{store.exclude(Long.parseLong(id),exclude);}catch(Exception ignored){}}
         @JavascriptInterface public void rename(String id,String name){try{store.rename(Long.parseLong(id),name);}catch(Exception ignored){}}
-        @JavascriptInterface public void openMap(){runOnUiThread(()->voice.say("Открываю карту маршрута");startActivity(new Intent(MainActivity.this,RouteMapActivity.class)));}
-        @JavascriptInterface public void openWaybill(){runOnUiThread(()->voice.say("Открываю путевой журнал");startActivity(new Intent(MainActivity.this,WaybillActivity.class)));}
+        @JavascriptInterface public void openMap(){runOnUiThread(()->{voice.say("Открываю карту маршрута");startActivity(new Intent(MainActivity.this,RouteMapActivity.class));});}
+        @JavascriptInterface public void openWaybill(){runOnUiThread(()->{voice.say("Открываю путевой журнал");startActivity(new Intent(MainActivity.this,WaybillActivity.class));});}
         @JavascriptInterface public void exportCsv(){runOnUiThread(()->{
             JSONObject j=store.summary();
             StringBuilder csv=new StringBuilder("Дата;Километраж_км;Время_движения_мин;Стоянки_мин\n");
