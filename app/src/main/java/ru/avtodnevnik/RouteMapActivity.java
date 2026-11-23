@@ -47,6 +47,7 @@ public class RouteMapActivity extends Activity {
     private static final int NAVY = Color.rgb(20, 57, 75);
     private static final int MINT = Color.rgb(31, 166, 143);
     private Store store;
+    private VoiceGuide voice;
     private MapView mapView;
     private MapLibreMap map;
     private boolean styleReady = false;
@@ -75,6 +76,7 @@ public class RouteMapActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         store=new Store(this);
+        voice=new VoiceGuide(this);
         MapLibre.getInstance(this);
         LinearLayout root=new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -226,6 +228,7 @@ public class RouteMapActivity extends Activity {
                     b.setOnClickListener(v->{
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat,lon),16),700);
                         subtitle.setText(label);
+                        voice.say("Показываю остановку на карте.");
                     });
                     number++;
                 }
@@ -264,7 +267,7 @@ public class RouteMapActivity extends Activity {
     @Override protected void onResume(){super.onResume();if(mapView!=null)mapView.onResume();}
     @Override protected void onPause(){if(mapView!=null)mapView.onPause();super.onPause();}
     @Override protected void onStop(){if(mapView!=null)mapView.onStop();super.onStop();}
-    @Override protected void onDestroy(){handler.removeCallbacks(tick);if(mapView!=null)mapView.onDestroy();super.onDestroy();}
+    @Override protected void onDestroy(){handler.removeCallbacks(tick);if(mapView!=null)mapView.onDestroy();if(voice!=null)voice.release();super.onDestroy();}
     @Override public void onLowMemory(){super.onLowMemory();if(mapView!=null)mapView.onLowMemory();}
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);if(mapView!=null)mapView.onSaveInstanceState(out);}
 }
