@@ -12,6 +12,11 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
 import android.widget.Toast;
+import android.media.MediaMetadataRetriever;
+import android.net.Uri;
+import java.io.File;
+import java.io.InputStream;
+import java.io.FileOutputStream;
 import org.json.JSONObject;
 import java.util.Locale;
 
@@ -20,6 +25,7 @@ public class MainActivity extends Activity {
     private VoiceGuide voice;
     private WebView web;
     private static final int GPS_REQ = 312;
+    private static final int VOICE_IMPORT_REQ = 923;
     @Override public void onCreate(Bundle b){
         super.onCreate(b);store=new Store(this);voice=new VoiceGuide(this);
         web=new WebView(this);
@@ -55,10 +61,60 @@ public class MainActivity extends Activity {
         if(request==GPS_REQ && permissionGranted())start();
         else Toast.makeText(this,"Для записи необходим доступ к точной геолокации",Toast.LENGTH_LONG).show();
     }
+    private void importElevenLabsVoice(){
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("audio/*");
+        try{startActivityForResult(picker,VOICE_IMPORT_REQ);}
+        catch(Exception ex){Toast.makeText(this,"Не найден файловый менеджер для выбора MP3",Toast.LENGTH_LONG).show();}
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=VOICE_IMPORT_REQ||result!=RESULT_OK||data==null)return;
+        Uri uri=data.getData();
+        if(uri==null)return;
+        File temporary=new File(getFilesDir(),"voice_master_temp.mp3");
+        try{
+            int copied=0;
+            try(InputStream in=getContentResolver().openInputStream(uri);
+                FileOutputStream out=new FileOutputStream(temporary)){
+                if(in==null)throw new IllegalStateException("Не удалось открыть аудиозапись");
+                byte[] dataBuffer=new byte[8192];
+                int read;
+                while((read=in.read(dataBuffer))!=-1){
+                    copied+=read;
+                    if(copied>15*1024*1024)throw new IllegalStateException("Слишком большой файл");
+                    out.write(dataBuffer,0,read);
+                }
+            }
+            if(copied<20000)throw new IllegalStateException("Аудиозапись слишком короткая");
+            MediaMetadataRetriever meta=new MediaMetadataRetriever();
+            long duration;
+            try{
+                meta.setDataSource(temporary.getAbsolutePath());
+                String length=meta.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                duration=length==null?0:Long.parseLong(length);
+            }finally{meta.release();}
+            // Cuts were timed against the exact 29.6s ElevenLabs master recording.
+            if(duration<29000||duration>31000){
+                throw new IllegalStateException("Нужна исходная запись ElevenLabs длительностью около 29,6 секунды");
+            }
+            File target=voice.masterFile();
+            if(target.exists()&&!target.delete())throw new IllegalStateException("Нельзя заменить старую запись");
+            if(!temporary.renameTo(target))throw new IllegalStateException("Нельзя сохранить аудиозапись");
+            Toast.makeText(this,"11 фраз ElevenLabs подключены. Запись хранится в телефоне.",Toast.LENGTH_LONG).show();
+            refresh();
+            voice.preview();
+        }catch(Exception ex){
+            Toast.makeText(this,"Ошибка импорта: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+        }finally{if(temporary.exists())temporary.delete();}
+    }
     @Override protected void onResume(){super.onResume();if(web!=null)web.postDelayed(this::refresh,600);}
     @Override protected void onDestroy(){if(voice!=null)voice.release();super.onDestroy();}
     public class Bridge {
         @JavascriptInterface public boolean voiceEnabled(){return voice.enabled();}
+        @JavascriptInterface public boolean voiceImported(){return voice.hasImportedVoice();}
+        @JavascriptInterface public void importVoice(){runOnUiThread(()->importElevenLabsVoice());}
         @JavascriptInterface public void setVoiceEnabled(boolean enabled){runOnUiThread(()->{voice.setEnabled(enabled);refresh();});}
         @JavascriptInterface public void previewVoice(){runOnUiThread(()->voice.preview());}
         @JavascriptInterface public void gpsWarning(){runOnUiThread(()->voice.say("Внимание. Давно нет сигнала GPS. Проверьте геолокацию."));}
@@ -103,9 +159,11 @@ h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-te
 <div class="card"><h3>🔊 Голосовые подсказки</h3>
 <div class="muted">Подтверждение начала поездки, паузы, продолжения работы и завершения дня. Небольшое предупреждение при потере GPS. Можно отключить в любой момент.</div>
 <div class="voice-settings"><button class="voicebtn off" id="voiceToggle" onclick="toggleVoice()">Включить голос</button><button class="button" onclick="Driver.previewVoice()">▶ Проверить голос</button></div>
+<div class="voice-settings"><button class="button" onclick="Driver.importVoice()">📁 Выбрать запись ElevenLabs (MP3)</button></div>
+<div class="muted" id="voiceFileStatus" style="margin-top:10px">Без записи используется системный голос Android.</div>
 <div class="muted" style="margin-top:10px">По умолчанию выключено. Используется русский голос, установленный на телефоне.</div></div>
 <div class="card"><h3>Отчёт</h3><p class="muted">Сводка последнего рабочего дня в формате CSV.</p><button class="button" onclick="Driver.exportCsv()">Экспортировать CSV ↗</button></div>
-<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.5.0</div></main>
+<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.6.0</div></main>
 <script>
 let state={active:false,distance:0,moving:0,stopped:0,points:[],stops:[]};
 const el=id=>document.getElementById(id);
@@ -133,6 +191,7 @@ el('pause').disabled=!state.active;el('pause').textContent=state.paused?'▶ П�
 const voiceOn=Driver.voiceEnabled();
 el('voiceToggle').textContent=voiceOn?'🔊 Голос включён — выключить':'🔇 Включить голос';
 el('voiceToggle').classList.toggle('off',!voiceOn);
+el('voiceFileStatus').textContent=Driver.voiceImported()?'✓ Запись ElevenLabs подключена. 11 фраз воспроизводятся офлайн.':'Выберите вашу исходную запись ElevenLabs длительностью 29,6 с — один раз. Без неё используется голос Android.';
 el('hero').classList.toggle('on',state.active&&!state.paused);el('status').innerHTML='<i class="dot"></i> '+(state.paused?'Пауза · ожидание задания':state.active?'Идёт GPS-запись':'Запись выключена');
 el('go').textContent=state.active?'■ Завершить рабочий день':'▶ Начать рабочий день';el('go').classList.toggle('stop',state.active);
 el('prompt').textContent=state.paused?'Пауза активна: пробег и движение не учитываются. Нажмите «Продолжить работу» перед выездом.':state.active?'Рабочий день записывается. Экран можно выключить.':'Нажмите «Начать рабочий день» для новой записи.';
