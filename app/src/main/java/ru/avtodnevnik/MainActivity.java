@@ -63,11 +63,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void end(){runOnUiThread(()->{startService(new Intent(MainActivity.this,TrackerService.class).setAction("END"));web.postDelayed(()->refresh(),750);});}
         @JavascriptInterface public void exclude(String id,boolean exclude){try{store.exclude(Long.parseLong(id),exclude);}catch(Exception ignored){}}
         @JavascriptInterface public void rename(String id,String name){try{store.rename(Long.parseLong(id),name);}catch(Exception ignored){}}
-        @JavascriptInterface public void openMap(double lat,double lon){runOnUiThread(()->{
-            if(lat==0 && lon==0)return;
-            Intent i=new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(String.format(Locale.US,"https://www.openstreetmap.org/?mlat=%.6f&mlon=%.6f#map=16/%.6f/%.6f",lat,lon,lat,lon)));
-            startActivity(i);
-        });}
+        @JavascriptInterface public void openMap(){runOnUiThread(()->startActivity(new Intent(MainActivity.this,RouteMapActivity.class)));}
         @JavascriptInterface public void exportCsv(){runOnUiThread(()->{
             JSONObject j=store.summary();
             StringBuilder csv=new StringBuilder("Дата;Километраж_км;Время_движения_мин;Стоянки_мин\n");
@@ -92,18 +88,18 @@ h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-te
 <div class="stat"><div class="label">НА СТОЯНКАХ</div><div id="stopped" class="value">0 мин</div></div>
 <div class="stat"><div class="label">ТОПЛИВО · ОЦЕНКА</div><div id="fuel" class="value">0 ₽</div></div></div>
 <div class="card"><h3>Управление записью</h3><div id="prompt" class="muted">Утром нажмите кнопку и оставьте телефон на зарядке в автомобиле.</div><button id="go" class="primary" onclick="toggle()">▶ Начать рабочий день</button><button id="pause" class="breakbutton" style="display:none" onclick="togglePause()">☕ Перекур / Ожидание задания</button><div id="breaktime" class="muted" style="margin-top:10px">Перерывы: 0 мин</div><div class="muted" style="margin-top:14px">GPS работает при выключенном экране. Данные остаются на устройстве.</div><div id="warning" class="warn"></div></div>
-<div class="card"><h3>Маршрут дня</h3><div class="muted">Схема GPS-трека (без дорожной подложки)</div><div class="mapbox"><svg viewBox="0 0 330 175" id="route"><path d="M20 140Q90 70 135 110T300 22" fill="none" stroke="#b3cecc" stroke-width="3" stroke-dasharray="6 6"/></svg><span>Маршрут по координатам GPS</span></div><button class="button" onclick="openMap()">↗ Открыть последнюю точку на карте OSM</button></div>
+<div class="card"><h3>Маршрут дня</h3><div class="muted">Улицы, полный GPS-маршрут и точки стоянок на интерактивной карте</div><div class="mapbox"><svg viewBox="0 0 330 175" id="route"><path d="M20 140Q90 70 135 110T300 22" fill="none" stroke="#b3cecc" stroke-width="3" stroke-dasharray="6 6"/></svg><span>Мини-схема GPS-трека</span></div><button class="button" onclick="openMap()">🗺 Открыть карту маршрута</button></div>
 <div class="card"><h3>Остановки</h3><div class="muted">Фиксируются после пяти минут в радиусе 40 м. Ложные можно исключить.</div><div id="stops" style="margin-top:14px" class="muted">Остановок пока нет</div></div>
 <div class="card"><h3>Расход топлива</h3><div class="settings"><label>Л/100 км</label><input id="litres" type="number" min="1" max="40" step=".1" value="8"></div><div class="settings"><label>Цена за литр, ₽</label><input id="price" type="number" min="1" max="300" step=".1" value="65"></div><div class="muted">Оценка по пробегу. Простой с работающим мотором не учитывается.</div></div>
 <div class="card"><h3>Отчёт</h3><p class="muted">Сводка последнего рабочего дня в формате CSV.</p><button class="button" onclick="Driver.exportCsv()">Экспортировать CSV ↗</button></div>
-<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.1</div></main>
+<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.2</div></main>
 <script>
 let state={active:false,distance:0,moving:0,stopped:0,points:[],stops:[]};
 const el=id=>document.getElementById(id);
 const fmt=m=>m>=60?Math.floor(m/60)+' ч '+(m%60)+' мин':m+' мин';
 function toggle(){if(state.active){if(confirm('Завершить запись рабочего дня?'))Driver.end()}else Driver.start();setTimeout(refresh,900)}
 function togglePause(){if(state.paused)Driver.resume();else Driver.pause();setTimeout(refresh,350)}
-function openMap(){Driver.openMap(Number(state.lastLat||0),Number(state.lastLon||0))}
+function openMap(){Driver.openMap()}
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function nameStop(id){const text=prompt('Название остановки:');if(text!==null){Driver.rename(String(id),text);setTimeout(refresh,250)}}
 function exclude(id,yes){Driver.exclude(String(id),yes);setTimeout(refresh,250)}
