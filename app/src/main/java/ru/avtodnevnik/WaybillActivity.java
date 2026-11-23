@@ -70,7 +70,7 @@ public class WaybillActivity extends Activity {
                 os.write(new byte[]{(byte)0xEF,(byte)0xBB,(byte)0xBF}); // UTF-8 BOM for Excel Cyrillic.
                 os.write(WaybillEngine.csv(store,csvDate).getBytes(StandardCharsets.UTF_8));
             }
-            os.flush();
+            if(code==SAVE_CSV)os.flush(); // XLSX writer closes its own zip stream.
             Toast.makeText(this,code==SAVE_WEEK_XLSX?"Недельная таблица Excel сохранена":"Суточная таблица CSV сохранена",Toast.LENGTH_LONG).show();
             voice.say("Путевой журнал сохранён.");
         }catch(Exception e){
