@@ -14,18 +14,38 @@ import java.util.Locale;
 
 public class Store extends SQLiteOpenHelper {
     private final SharedPreferences prefs;
-    public Store(Context c) { super(c,"avtodnevnik.db",null,1); prefs=c.getSharedPreferences("record",0); }
+    public Store(Context c) { super(c,"avtodnevnik.db",null,2); prefs=c.getSharedPreferences("record",0); }
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE trips(id INTEGER PRIMARY KEY AUTOINCREMENT, started INTEGER NOT NULL, finished INTEGER, km REAL DEFAULT 0, moving_ms INTEGER DEFAULT 0)");
         db.execSQL("CREATE TABLE points(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER, t INTEGER,lat REAL,lon REAL,accuracy REAL,speed REAL)");
         db.execSQL("CREATE TABLE stops(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER,arrival INTEGER,departure INTEGER,lat REAL,lon REAL,excluded INTEGER DEFAULT 0,note TEXT DEFAULT '')");
+        db.execSQL("CREATE TABLE breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");
     }
-    @Override public void onUpgrade(SQLiteDatabase db,int oldV,int newV){}
+    @Override public void onUpgrade(SQLiteDatabase db,int oldV,int newV){if(oldV<2)db.execSQL("CREATE TABLE IF NOT EXISTS breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");}
     public long active(){return prefs.getLong("active",0);}
+    public boolean paused(){return active()!=0 && prefs.getLong("pause_id",0)!=0;}
+    private void resetPosition(SharedPreferences.Editor e){
+        e.remove("anchor_lat").remove("anchor_lon").remove("anchor_t").remove("last_t").remove("last_lat").remove("last_lon");
+    }
+    public synchronized void pause(){
+        long trip=active();if(trip==0||paused())return;
+        long now=System.currentTimeMillis();
+        long stop=prefs.getLong("active_stop",0);
+        if(stop!=0)getWritableDatabase().execSQL("UPDATE stops SET departure=? WHERE id=?",new Object[]{now,stop});
+        android.content.ContentValues v=new android.content.ContentValues();
+        v.put("trip_id",trip);v.put("started",now);
+        long breakId=getWritableDatabase().insertOrThrow("breaks",null,v);
+        SharedPreferences.Editor e=prefs.edit();e.putLong("pause_id",breakId).remove("active_stop");resetPosition(e);e.apply();
+    }
+    public synchronized void resume(){
+        if(!paused())return;
+        getWritableDatabase().execSQL("UPDATE breaks SET ended=? WHERE id=?",new Object[]{System.currentTimeMillis(),prefs.getLong("pause_id",0)});
+        SharedPreferences.Editor e=prefs.edit().remove("pause_id");resetPosition(e);e.apply();
+    }
     public long begin(){if(active()!=0)return active(); SQLiteDatabase db=getWritableDatabase(); android.content.ContentValues v=new android.content.ContentValues();v.put("started",System.currentTimeMillis());long id=db.insertOrThrow("trips",null,v);prefs.edit().putLong("active",id).remove("anchor_lat").remove("anchor_lon").remove("anchor_t").remove("last_t").remove("last_lat").remove("last_lon").remove("active_stop").apply();return id;}
-    public void finish(){long id=active();if(id==0)return;long now=System.currentTimeMillis();long stop=prefs.getLong("active_stop",0);if(stop!=0){getWritableDatabase().execSQL("UPDATE stops SET departure=? WHERE id=?",new Object[]{now,stop});}getWritableDatabase().execSQL("UPDATE trips SET finished=? WHERE id=?",new Object[]{now,id});prefs.edit().clear().apply();}
+    public void finish(){long id=active();if(id==0)return;long now=System.currentTimeMillis();if(paused())resume();long stop=prefs.getLong("active_stop",0);if(stop!=0){getWritableDatabase().execSQL("UPDATE stops SET departure=? WHERE id=?",new Object[]{now,stop});}getWritableDatabase().execSQL("UPDATE trips SET finished=? WHERE id=?",new Object[]{now,id});prefs.edit().clear().apply();}
     public synchronized void onFix(Location p){
-        long trip=active();if(trip==0 || p.getAccuracy()>55 || p.getAccuracy()<=0)return;
+        long trip=active();if(trip==0 || paused() || p.getAccuracy()>55 || p.getAccuracy()<=0)return;
         long t=p.getTime()>0?p.getTime():System.currentTimeMillis();
         if(t>System.currentTimeMillis()+30000)return;
         long lt=prefs.getLong("last_t",0);
@@ -62,13 +82,14 @@ public class Store extends SQLiteOpenHelper {
     private static String fmt(long t){return new SimpleDateFormat("dd.MM HH:mm",Locale.getDefault()).format(new Date(t));}
     public JSONObject summary(){
         JSONObject j=new JSONObject();long active=active();try{
-            j.put("active",active!=0);j.put("distance",0);j.put("moving",0);j.put("stopped",0);j.put("gpsAge",-1);j.put("lastLat",0);j.put("lastLon",0);
+            j.put("active",active!=0);j.put("paused",paused());j.put("break_minutes",0);j.put("distance",0);j.put("moving",0);j.put("stopped",0);j.put("gpsAge",-1);j.put("lastLat",0);j.put("lastLon",0);
             SQLiteDatabase db=getReadableDatabase();long id=active;
             if(id==0){try(Cursor c=db.rawQuery("SELECT id FROM trips ORDER BY id DESC LIMIT 1",null)){if(c.moveToFirst())id=c.getLong(0);}}
             if(id==0)return j;
             j.put("id",id);
             try(Cursor c=db.rawQuery("SELECT started,COALESCE(finished,0),km,moving_ms FROM trips WHERE id=?",new String[]{""+id})){if(c.moveToFirst()){j.put("started",fmt(c.getLong(0)));j.put("distance",c.getDouble(2));j.put("moving",c.getLong(3)/60000);}}
             try(Cursor c=db.rawQuery("SELECT COALESCE(SUM((COALESCE(departure,?)-arrival)),0) FROM stops WHERE trip_id=? AND excluded=0",new String[]{""+System.currentTimeMillis(),""+id})){if(c.moveToFirst())j.put("stopped",c.getLong(0)/60000);}
+            try(Cursor c=db.rawQuery("SELECT COALESCE(SUM(COALESCE(ended,?)-started),0) FROM breaks WHERE trip_id=?",new String[]{""+System.currentTimeMillis(),""+id})){if(c.moveToFirst())j.put("break_minutes",c.getLong(0)/60000);}
             try(Cursor c=db.rawQuery("SELECT t,lat,lon FROM points WHERE trip_id=? ORDER BY id DESC LIMIT 1",new String[]{""+id})){if(c.moveToFirst()){j.put("gpsAge",Math.max(0,(System.currentTimeMillis()-c.getLong(0))/1000));j.put("lastLat",c.getDouble(1));j.put("lastLon",c.getDouble(2));}}
             JSONArray points=new JSONArray();
             try(Cursor c=db.rawQuery("SELECT lat,lon FROM points WHERE trip_id=? ORDER BY id DESC LIMIT 450",new String[]{""+id})){while(c.moveToNext()){JSONArray p=new JSONArray();p.put(c.getDouble(0));p.put(c.getDouble(1));points.put(p);}}
