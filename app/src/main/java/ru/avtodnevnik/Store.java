@@ -16,7 +16,7 @@ public class Store extends SQLiteOpenHelper {
     private final SharedPreferences prefs;
     private final Context appContext;
     public Store(Context c) {
-        super(c,"avtodnevnik.db",null,3);
+        super(c,"avtodnevnik.db",null,4);
         appContext=c.getApplicationContext();
         prefs=c.getSharedPreferences("record",0);
     }
@@ -39,6 +39,13 @@ public class Store extends SQLiteOpenHelper {
         upgradeAddress(db,"trips","start_");
         upgradeAddress(db,"trips","end_");
         upgradeAddress(db,"stops","");
+        upgradeMatchMeta(db,"trips","start_");
+        upgradeMatchMeta(db,"trips","end_");
+        upgradeMatchMeta(db,"stops","");
+    }
+    private static void upgradeMatchMeta(SQLiteDatabase db,String table,String prefix){
+        db.execSQL("ALTER TABLE "+table+" ADD COLUMN "+prefix+"source TEXT DEFAULT ''");
+        db.execSQL("ALTER TABLE "+table+" ADD COLUMN "+prefix+"distance REAL DEFAULT -1");
     }
     @Override public void onUpgrade(SQLiteDatabase db,int oldV,int newV){
         if(oldV<2)db.execSQL("CREATE TABLE IF NOT EXISTS breaks(id INTEGER PRIMARY KEY AUTOINCREMENT,trip_id INTEGER NOT NULL,started INTEGER NOT NULL,ended INTEGER)");
@@ -48,6 +55,16 @@ public class Store extends SQLiteOpenHelper {
             upgradeAddress(db,"trips","start_");
             upgradeAddress(db,"trips","end_");
             upgradeAddress(db,"stops","");
+        }
+        if(oldV<4){
+            upgradeMatchMeta(db,"trips","start_");
+            upgradeMatchMeta(db,"trips","end_");
+            upgradeMatchMeta(db,"stops","");
+            // Old Android reverse geocodes were not checked against a 40m radius.
+            // Recheck automatic suggestions, but never erase a user-edited address (4).
+            db.execSQL("UPDATE stops SET status=0,city='',street='',house='' WHERE status IN (1,2,3)");
+            db.execSQL("UPDATE trips SET start_status=0,start_city='',start_street='',start_house='' WHERE start_status IN (1,2,3)");
+            db.execSQL("UPDATE trips SET end_status=0,end_city='',end_street='',end_house='' WHERE end_status IN (1,2,3)");
         }
     }
     public long active(){return prefs.getLong("active",0);}
@@ -149,29 +166,55 @@ public class Store extends SQLiteOpenHelper {
             try(Cursor c=db.rawQuery("SELECT lat,lon FROM points WHERE trip_id=? ORDER BY id DESC LIMIT 450",new String[]{""+id})){while(c.moveToNext()){JSONArray p=new JSONArray();p.put(c.getDouble(0));p.put(c.getDouble(1));points.put(p);}}
             j.put("points",points);
             JSONArray stops=new JSONArray();
-            try(Cursor c=db.rawQuery("SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note FROM stops WHERE trip_id=? ORDER BY arrival DESC",new String[]{""+id})){while(c.moveToNext()){JSONObject s=new JSONObject();s.put("id",c.getLong(0));s.put("arrival",fmt(c.getLong(1)));s.put("duration",( (c.getLong(2)==0?System.currentTimeMillis():c.getLong(2))-c.getLong(1))/60000);s.put("lat",c.getDouble(3));s.put("lon",c.getDouble(4));s.put("excluded",c.getInt(5)!=0);s.put("note",c.getString(6));stops.put(s);}}
+            try(Cursor c=db.rawQuery("SELECT id,arrival,COALESCE(departure,0),lat,lon,excluded,note,city,street,house,status,source,distance FROM stops WHERE trip_id=? ORDER BY arrival DESC",new String[]{""+id})){while(c.moveToNext()){JSONObject s=new JSONObject();s.put("id",c.getLong(0));s.put("arrival",fmt(c.getLong(1)));s.put("duration",( (c.getLong(2)==0?System.currentTimeMillis():c.getLong(2))-c.getLong(1))/60000);s.put("lat",c.getDouble(3));s.put("lon",c.getDouble(4));s.put("excluded",c.getInt(5)!=0);s.put("note",c.getString(6));
+                    String city=c.getString(7),street=c.getString(8),house=c.getString(9);
+                    s.put("address",(
+                        (city==null||city.isEmpty()?"":city+", ")+
+                        (street==null||street.isEmpty()?"":street+", ")+
+                        (house==null||house.isEmpty()?"":"д. "+house)
+                    ).replaceAll(", $",""));
+                    s.put("addressStatus",c.getInt(10));
+                    s.put("addressSource",c.getString(11));
+                    s.put("addressDistance",c.getDouble(12));stops.put(s);}}
             j.put("stops",stops);
         }catch(Exception ignored){}return j;
     }
 
 
-    /** Address fields are independent: a city does not imply a known street or house. */
+    /**
+     * Find the nearest mapped address within 40m of the actual GPS point.
+     * A city-only or street-only reverse geocode is not treated as a building address.
+     */
     public synchronized void resolveAddress(String kind,long id,double lat,double lon){
         String table="stop".equals(kind)?"stops":"trips";
         String prefix="stop".equals(kind)?"":("end".equals(kind)?"end_":"start_");
-        if(!"stop".equals(kind) && !"start".equals(kind) && !"end".equals(kind))return;
+        if(!"stop".equals(kind)&&!"start".equals(kind)&&!"end".equals(kind))return;
         android.content.ContentValues pending=new android.content.ContentValues();
         pending.put(prefix+"status",1);
-        getWritableDatabase().update(table,pending,"id=? AND "+prefix+"status<>4",new String[]{""+id});
-        AddressResolver.resolve(appContext,lat,lon,address->{
+        int updated=getWritableDatabase().update(table,pending,
+            "id=? AND "+prefix+"status NOT IN (1,4)",new String[]{""+id});
+        if(updated!=1)return; // Already resolving or manually corrected.
+        NearbyAddressResolver.lookup(appContext,lat,lon,address->{
             try{
                 android.content.ContentValues result=new android.content.ContentValues();
-                String city=AddressResolver.city(address),street=AddressResolver.street(address),house=AddressResolver.house(address);
-                result.put(prefix+"city",city);
-                result.put(prefix+"street",street);
-                result.put(prefix+"house",house);
-                result.put(prefix+"status",(!city.isEmpty()||!street.isEmpty()||!house.isEmpty())?2:3);
-                getWritableDatabase().update(table,result,"id=? AND "+prefix+"status<>4",new String[]{""+id});
+                if(address!=null && !address.street.isEmpty() && !address.house.isEmpty()){
+                    result.put(prefix+"city",address.city);
+                    result.put(prefix+"street",address.street);
+                    result.put(prefix+"house",address.house);
+                    result.put(prefix+"source",address.source);
+                    result.put(prefix+"distance",address.distanceMetres);
+                    result.put(prefix+"status",2);
+                }else{
+                    result.put(prefix+"city","");
+                    result.put(prefix+"street","");
+                    result.put(prefix+"house","");
+                    result.put(prefix+"source","");
+                    result.put(prefix+"distance",-1);
+                    result.put(prefix+"status",3); // No verified nearby house.
+                }
+                // Ignore a late response if the driver has since edited that address.
+                getWritableDatabase().update(table,result,
+                    "id=? AND "+prefix+"status=1",new String[]{""+id});
             }catch(Exception ignored){}
         });
     }
@@ -181,7 +224,7 @@ public class Store extends SQLiteOpenHelper {
         String prefix="stop".equals(kind)?"":("end".equals(kind)?"end_":"start_");
         android.content.ContentValues v=new android.content.ContentValues();
         v.put(prefix+"city",clean(city));v.put(prefix+"street",clean(street));
-        v.put(prefix+"house",clean(house));v.put(prefix+"status",4);
+        v.put(prefix+"house",clean(house));v.put(prefix+"status",4);v.put(prefix+"source","Вручную");v.put(prefix+"distance",-1);
         getWritableDatabase().update(table,v,"id=?",new String[]{""+id});
     }
     private static String clean(String value){return value==null?"":value.trim().substring(0,Math.min(180,value.trim().length()));}
@@ -192,8 +235,11 @@ public class Store extends SQLiteOpenHelper {
         String q="stop".equals(kind)?"SELECT lat,lon FROM stops WHERE id=?":
             "SELECT "+column+"lat,"+column+"lon FROM trips WHERE id=?";
         try(Cursor c=getReadableDatabase().rawQuery(q,new String[]{""+id})){
-            if(c.moveToFirst() && !c.isNull(0) && !c.isNull(1))
+            if(c.moveToFirst() && !c.isNull(0) && !c.isNull(1)){
+                // Explicit retry is allowed to replace an old manually entered address.
+                getWritableDatabase().execSQL("UPDATE "+table+" SET "+column+"status=0 WHERE id=?",new Object[]{id});
                 resolveAddress(kind,id,c.getDouble(0),c.getDouble(1));
+            }
         }
     }
     /** Populate geocodes for older saved trips after the v2 to v3 database migration. */
