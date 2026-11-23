@@ -1,6 +1,9 @@
 package ru.avtodnevnik;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,6 +28,9 @@ import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.Style;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.layers.Layer;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.expressions.Expression;
 import org.maplibre.android.style.sources.GeoJsonSource;
 import org.maplibre.geojson.Feature;
 import org.maplibre.geojson.FeatureCollection;
@@ -41,6 +47,11 @@ import static org.maplibre.android.style.layers.PropertyFactory.circleStrokeColo
 import static org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth;
 import static org.maplibre.android.style.layers.PropertyFactory.lineColor;
 import static org.maplibre.android.style.layers.PropertyFactory.lineWidth;
+import static org.maplibre.android.style.layers.PropertyFactory.textField;
+import static org.maplibre.android.style.layers.PropertyFactory.textSize;
+import static org.maplibre.android.style.layers.PropertyFactory.textColor;
+import static org.maplibre.android.style.layers.PropertyFactory.textHaloColor;
+import static org.maplibre.android.style.layers.PropertyFactory.textHaloWidth;
 
 public class RouteMapActivity extends Activity {
     private static final String STYLE = "https://tiles.openfreemap.org/styles/liberty";
@@ -52,6 +63,7 @@ public class RouteMapActivity extends Activity {
     private MapLibreMap map;
     private boolean styleReady = false;
     private boolean cameraSet = false;
+    private double selectedLat=Double.NaN,selectedLon=Double.NaN;
     private TextView title;
     private TextView subtitle;
     private LinearLayout stopItems;
@@ -116,9 +128,31 @@ public class RouteMapActivity extends Activity {
         bottom.setBackground(surface(Color.WHITE,20));
         TextView legend=txt("● Маршрут       ● Стоянки       ● Последняя точка",12,NAVY,true);
         bottom.addView(legend);
-        TextView info=txt("Масштабируйте карту двумя пальцами. Нажмите на стоянку в списке ниже, чтобы посмотреть её.",12,Color.rgb(107,128,132),false);
+        TextView info=txt("Нажмите на стоянку и выберите Яндекс Карты или 2ГИС для проверки адреса и номера дома. Детальная карта откроется отдельно.",12,Color.rgb(107,128,132),false);
         info.setPadding(0,dp(9),0,dp(8));
         bottom.addView(info);
+        LinearLayout mapOptions=new LinearLayout(this);
+        mapOptions.setOrientation(LinearLayout.HORIZONTAL);
+        mapOptions.setPadding(0,dp(5),0,dp(8));
+        Button yandex=new Button(this);
+        yandex.setText("Яндекс Карты ↗");
+        yandex.setAllCaps(false);
+        yandex.setTextSize(12);
+        yandex.setTextColor(NAVY);
+        yandex.setBackground(surface(Color.rgb(219,237,244),12));
+        yandex.setOnClickListener(v->openDetailedMap("yandex"));
+        LinearLayout.LayoutParams yp=new LinearLayout.LayoutParams(0,dp(43),1);
+        yp.setMargins(0,0,dp(10),0);
+        mapOptions.addView(yandex,yp);
+        Button twogis=new Button(this);
+        twogis.setText("2ГИС ↗");
+        twogis.setAllCaps(false);
+        twogis.setTextSize(12);
+        twogis.setTextColor(NAVY);
+        twogis.setBackground(surface(Color.rgb(217,244,230),12));
+        twogis.setOnClickListener(v->openDetailedMap("2gis"));
+        mapOptions.addView(twogis,new LinearLayout.LayoutParams(0,dp(43),1));
+        bottom.addView(mapOptions);
         HorizontalScrollView scroller=new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         stopItems=new LinearLayout(this);
@@ -136,6 +170,8 @@ public class RouteMapActivity extends Activity {
             map=readyMap;
             map.setStyle(STYLE, style -> {
                 styleReady=true;
+                preferRussianLabels(style);
+                enableBuildingNumbers(style);
                 style.addSource(new GeoJsonSource("trip-route",FeatureCollection.fromFeatures(new Feature[]{})));
                 style.addLayer(new LineLayer("trip-route-layer","trip-route").withProperties(
                     lineColor(MINT),lineWidth(5.5f)));
@@ -151,6 +187,53 @@ public class RouteMapActivity extends Activity {
             });
         });
         handler.postDelayed(tick,15000L);
+    }
+
+    /** Use original OSM local-language names rather than English/Latin labels. */
+    private void preferRussianLabels(Style style){
+        try{
+            for(Layer layer:style.getLayers()){
+                if(!(layer instanceof SymbolLayer))continue;
+                String id=layer.getId().toLowerCase(Locale.ROOT);
+                if(id.contains("housenumber")||id.contains("shield")||id.contains("ref")||id.startsWith("trip-"))continue;
+                if(id.contains("road")||id.contains("street")||id.contains("place")||
+                   id.contains("town")||id.contains("city")||id.contains("village")||
+                   id.contains("country")||id.contains("poi")||id.contains("label")||
+                   id.contains("transportation")){
+                    ((SymbolLayer)layer).setProperties(textField(Expression.coalesce(
+                        Expression.get("name"),Expression.get("name:nonlatin"),
+                        Expression.get("name:latin"))));
+                }
+            }
+        }catch(Exception ignored){}
+    }
+    /** Display OSM house numbers when supplied by the vector map tiles. */
+    private void enableBuildingNumbers(Style style){
+        try{
+            if(style.getSource("openmaptiles")==null)return;
+            SymbolLayer numbers=new SymbolLayer("avtodnevnik-house-numbers","openmaptiles")
+                .withSourceLayer("housenumber")
+                .withProperties(
+                    textField(Expression.get("housenumber")),
+                    textSize(12f),
+                    textColor(Color.rgb(54,66,73)),
+                    textHaloColor(Color.WHITE),
+                    textHaloWidth(1.5f)
+                );
+            numbers.setMinZoom(17.0f);
+            style.addLayer(numbers);
+        }catch(Exception ignored){}
+    }
+    private void openDetailedMap(String provider){
+        if(!Double.isFinite(selectedLat)||!Double.isFinite(selectedLon)){
+            Toast.makeText(this,"GPS-точка пока не получена",Toast.LENGTH_LONG).show();
+            return;
+        }
+        String url=provider.equals("2gis")
+            ?String.format(Locale.US,"https://2gis.ru/geo/%.7f,%.7f",selectedLon,selectedLat)
+            :String.format(Locale.US,"https://yandex.ru/maps/?ll=%.7f,%.7f&z=18",selectedLon,selectedLat);
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}
+        catch(Exception e){Toast.makeText(this,"Не удалось открыть карту",Toast.LENGTH_LONG).show();}
     }
 
     private FeatureCollection collection(List<Feature> items){
@@ -198,6 +281,9 @@ public class RouteMapActivity extends Activity {
             List<Feature> last=new ArrayList<>();
             if(!seen.isEmpty()){
                 LatLng ll=seen.get(seen.size()-1);
+                if(!Double.isFinite(selectedLat)){
+                    selectedLat=ll.getLatitude();selectedLon=ll.getLongitude();
+                }
                 last.add(Feature.fromGeometry(Point.fromLngLat(ll.getLongitude(),ll.getLatitude())));
             }
             if(lastSource!=null)lastSource.setGeoJson(collection(last));
@@ -226,6 +312,7 @@ public class RouteMapActivity extends Activity {
                     bp.setMargins(0,0,dp(9),0);
                     stopItems.addView(b,bp);
                     b.setOnClickListener(v->{
+                        selectedLat=lat;selectedLon=lon;
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat,lon),16),700);
                         subtitle.setText(label);
                         voice.say("Показываю остановку на карте.");
