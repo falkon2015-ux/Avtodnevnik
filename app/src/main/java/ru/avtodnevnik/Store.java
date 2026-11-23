@@ -155,6 +155,12 @@ public class Store extends SQLiteOpenHelper {
         JSONObject j=new JSONObject();long active=active();try{
             j.put("active",active!=0);j.put("paused",paused());j.put("break_minutes",0);j.put("distance",0);j.put("moving",0);j.put("stopped",0);j.put("gpsAge",-1);j.put("lastLat",0);j.put("lastLon",0);
             SQLiteDatabase db=getReadableDatabase();long id=active;
+            long[] today=WaybillEngine.dayRange(WaybillEngine.today());
+            j.put("todaySessions",0);
+            try(Cursor count=db.rawQuery("SELECT COUNT(*) FROM trips WHERE started>=? AND started<?",
+                    new String[]{""+today[0],""+today[1]})){
+                if(count.moveToFirst())j.put("todaySessions",count.getInt(0));
+            }
             if(id==0){try(Cursor c=db.rawQuery("SELECT id FROM trips ORDER BY id DESC LIMIT 1",null)){if(c.moveToFirst())id=c.getLong(0);}}
             if(id==0)return j;
             j.put("id",id);
