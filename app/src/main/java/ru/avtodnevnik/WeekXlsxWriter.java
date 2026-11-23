@@ -143,10 +143,10 @@ final class WeekXlsxWriter {
             .append(String.format(Locale.US,"%.2f",value)).append("</v></c>");
     }
     private static String overview(JSONObject week){
-        StringBuilder b=new StringBuilder(startSheet(new int[]{14,17,12,19,19,19,20,20}));
+        StringBuilder b=new StringBuilder(startSheet(new int[]{14,17,15,14,19,19,19,20,20}));
         rowOpen(b,1);str(b,1,0,"АВТОДНЕВНИК — ЖУРНАЛ ЗА НЕДЕЛЮ",true);rowClose(b);
         rowOpen(b,2);str(b,2,0,"С "+week.optString("from")+" по "+week.optString("to"),false);rowClose(b);
-        String[] names={"День","Дата","Поездки","Пробег, км","В движении, мин","На стоянках, мин","Ожидание, мин","Адреса проверить"};
+        String[] names={"День","Дата","Рабочие периоды","Маршруты","Пробег, км","В движении, мин","На стоянках, мин","Ожидание, мин","Адреса проверить"};
         rowOpen(b,4);
         for(int i=0;i<names.length;i++)str(b,4,i,names[i],true);
         rowClose(b);
@@ -156,20 +156,21 @@ final class WeekXlsxWriter {
             int row=i+5;rowOpen(b,row);
             str(b,row,0,d.optString("weekday"),false);
             str(b,row,1,d.optString("date"),false);
-            num(b,row,2,d.optInt("legs"));
-            num(b,row,3,d.optDouble("km"));
-            num(b,row,4,d.optLong("moving"));
-            num(b,row,5,d.optLong("stopped"));
-            num(b,row,6,d.optLong("breaks"));
-            num(b,row,7,d.optInt("missing"));
+            num(b,row,2,d.optInt("sessions"));
+            num(b,row,3,d.optInt("legs"));
+            num(b,row,4,d.optDouble("km"));
+            num(b,row,5,d.optLong("moving"));
+            num(b,row,6,d.optLong("stopped"));
+            num(b,row,7,d.optLong("breaks"));
+            num(b,row,8,d.optInt("missing"));
             rowClose(b);
         }
         JSONObject t=week.optJSONObject("total");
         if(t!=null){
             rowOpen(b,13);str(b,13,0,"ИТОГО ЗА НЕДЕЛЮ",true);
-            num(b,13,2,t.optLong("legs"));num(b,13,3,t.optDouble("km"));
-            num(b,13,4,t.optLong("moving"));num(b,13,5,t.optLong("stopped"));
-            num(b,13,6,t.optLong("breaks"));rowClose(b);
+            num(b,13,2,t.optLong("sessions"));num(b,13,3,t.optLong("legs"));
+            num(b,13,4,t.optDouble("km"));num(b,13,5,t.optLong("moving"));
+            num(b,13,6,t.optLong("stopped"));num(b,13,7,t.optLong("breaks"));rowClose(b);
         }
         rowOpen(b,16);str(b,16,0,"Адрес ближайшего объекта в радиусе 40 м может не совпадать с фактическим местом назначения.",false);rowClose(b);
         rowOpen(b,17);str(b,17,0,"© OpenStreetMap contributors. Адреса требуют проверки. GPS-журнал не является официальным путевым листом.",false);rowClose(b);
@@ -189,13 +190,13 @@ final class WeekXlsxWriter {
     private static String daily(Store store,String date,String weekday){
         JSONObject report=WaybillEngine.report(store,date);
         StringBuilder b=new StringBuilder(startSheet(new int[]{
-            7,12,21,27,14,12,21,27,14,13,16,20,14,17,37,19
+            7,12,21,27,14,12,21,27,14,13,16,20,14,17,37,19,14
         }));
         rowOpen(b,1);str(b,1,0,weekday+" "+date+" — путевой журнал Автодневник",true);rowClose(b);
         rowOpen(b,2);str(b,2,0,"Адреса из OpenStreetMap/системы Android; выбор не далее 40 м от точки GPS.",false);rowClose(b);
         String[] header={"№","Выезд","Город: откуда","Улица: откуда","Дом: откуда",
             "Прибытие","Город: куда","Улица: куда","Дом: куда","Пробег, км",
-            "Стоянка, мин","Событие","Источник","До адреса, м","Примечание","Подтверждение"};
+            "Стоянка, мин","Событие","Источник","До адреса, м","Примечание","Подтверждение","Рабочий период"};
         rowOpen(b,4);for(int i=0;i<header.length;i++)str(b,4,i,header[i],true);rowClose(b);
         JSONArray rows=report.optJSONArray("rows");
         int count=rows==null?0:rows.length();
@@ -220,6 +221,7 @@ final class WeekXlsxWriter {
             if(to!=null && to.optDouble("distanceMetres",-1)>=0)num(b,r,13,to.optDouble("distanceMetres"));
             str(b,r,14,line.optString("note"),false);
             str(b,r,15,status(to),false);
+            num(b,r,16,line.optInt("period"));
             rowClose(b);
         }
         JSONObject total=report.optJSONObject("total");
