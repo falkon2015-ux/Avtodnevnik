@@ -193,6 +193,9 @@ final class WaybillEngine {
                                     distance,dwell,val(stops,6),departure==0);
                                 entry.put("period",sessionCount);
                                 entry.put("gps",lastTime>0);
+                                entry.put("stopArrival",clock(arrival));
+                                entry.put("stopDeparture",departure==0?"сейчас":clock(departure));
+                                entry.put("stopActive",departure==0);
                             }
                             origin=stop;
                             if(departure==0){stoppedCurrently=true;departed=now;}
