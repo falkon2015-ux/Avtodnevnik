@@ -1,6 +1,7 @@
 package ru.avtodnevnik;
 
 import android.app.Activity;
+import android.location.Location;
 import android.content.Intent;
 import android.net.Uri;
 import android.widget.Toast;
@@ -64,6 +65,8 @@ public class RouteMapActivity extends Activity {
     private boolean styleReady = false;
     private boolean cameraSet = false;
     private double selectedLat=Double.NaN,selectedLon=Double.NaN;
+    private Button yandexButton, twogisButton;
+    private final List<LatLng> stopPositions=new ArrayList<>();
     private TextView title;
     private TextView subtitle;
     private LinearLayout stopItems;
@@ -89,6 +92,13 @@ public class RouteMapActivity extends Activity {
         super.onCreate(state);
         store=new Store(this);
         voice=new VoiceGuide(this);
+        if(getIntent()!=null && getIntent().hasExtra("selected_lat") && getIntent().hasExtra("selected_lon")){
+            double lat=getIntent().getDoubleExtra("selected_lat",Double.NaN);
+            double lon=getIntent().getDoubleExtra("selected_lon",Double.NaN);
+            if(Double.isFinite(lat)&&Double.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180&&(lat!=0||lon!=0)){
+                selectedLat=lat;selectedLon=lon;
+            }
+        }
         MapLibre.getInstance(this);
         LinearLayout root=new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -128,7 +138,7 @@ public class RouteMapActivity extends Activity {
         bottom.setBackground(surface(Color.WHITE,20));
         TextView legend=txt("● Маршрут   ● Стоянки   ● GPS   ·   Дома при приближении",12,NAVY,true);
         bottom.addView(legend);
-        TextView info=txt("Нажмите на стоянку и выберите Яндекс Карты или 2ГИС для проверки адреса и номера дома. Детальная карта откроется отдельно.",12,Color.rgb(107,128,132),false);
+        TextView info=txt("Выберите остановку внизу или коснитесь её маркера. Только после выбора кнопки Яндекс и 2ГИС откроют именно эту точку, а не положение автомобиля.",12,Color.rgb(107,128,132),false);
         info.setPadding(0,dp(9),0,dp(8));
         bottom.addView(info);
         LinearLayout mapOptions=new LinearLayout(this);
@@ -153,6 +163,8 @@ public class RouteMapActivity extends Activity {
         twogis.setOnClickListener(v->openDetailedMap("2gis"));
         mapOptions.addView(twogis,new LinearLayout.LayoutParams(0,dp(43),1));
         bottom.addView(mapOptions);
+        yandexButton=yandex;twogisButton=twogis;
+        updateLinkButtons();
         HorizontalScrollView scroller=new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         stopItems=new LinearLayout(this);
@@ -168,6 +180,22 @@ public class RouteMapActivity extends Activity {
         mapView.onCreate(state);
         mapView.getMapAsync(readyMap -> {
             map=readyMap;
+            map.addOnMapClickListener(tap->{
+                LatLng nearest=null;
+                double closest=Double.POSITIVE_INFINITY;
+                for(LatLng stop:stopPositions){
+                    float[] d=new float[1];
+                    Location.distanceBetween(tap.getLatitude(),tap.getLongitude(),
+                        stop.getLatitude(),stop.getLongitude(),d);
+                    if(d[0]<closest){closest=d[0];nearest=stop;}
+                }
+                // Only a stop marker can select a point; not the car's current GPS.
+                if(nearest!=null && closest<=75){
+                    selectStop(nearest.getLatitude(),nearest.getLongitude());
+                    return true;
+                }
+                return false;
+            });
             map.setStyle(STYLE, style -> {
                 styleReady=true;
                 preferRussianLabels(style);
@@ -224,16 +252,23 @@ public class RouteMapActivity extends Activity {
             style.addLayer(numbers);
         }catch(Exception ignored){}
     }
+    private void updateLinkButtons(){
+        boolean selected=Double.isFinite(selectedLat)&&Double.isFinite(selectedLon);
+        if(yandexButton!=null)yandexButton.setEnabled(selected);
+        if(twogisButton!=null)twogisButton.setEnabled(selected);
+    }
+    private void selectStop(double lat,double lon){
+        if(!Double.isFinite(lat)||!Double.isFinite(lon))return;
+        selectedLat=lat;selectedLon=lon;
+        updateLinkButtons();
+        subtitle.setText("Выбрана стоянка · перейти в Яндекс или 2ГИС");
+    }
     private void openDetailedMap(String provider){
         if(!Double.isFinite(selectedLat)||!Double.isFinite(selectedLon)){
             Toast.makeText(this,"GPS-точка пока не получена",Toast.LENGTH_LONG).show();
             return;
         }
-        String url=provider.equals("2gis")
-            ?String.format(Locale.US,"https://2gis.ru/geo/%.7f,%.7f",selectedLon,selectedLat)
-            :String.format(Locale.US,"https://yandex.ru/maps/?ll=%.7f,%.7f&z=18",selectedLon,selectedLat);
-        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}
-        catch(Exception e){Toast.makeText(this,"Не удалось открыть карту",Toast.LENGTH_LONG).show();}
+        MapLinks.open(this,provider,selectedLat,selectedLon);
     }
 
     private FeatureCollection collection(List<Feature> items){
@@ -264,12 +299,14 @@ public class RouteMapActivity extends Activity {
                 }
                 if(list.size()>1)lines.add(Feature.fromGeometry(LineString.fromLngLats(list)));
             }
+            stopPositions.clear();
             if(stopList!=null)for(int i=0;i<stopList.length();i++){
                 JSONObject p=stopList.optJSONObject(i);
                 if(p==null || p.optBoolean("excluded"))continue;
                 double lat=p.optDouble("lat"),lon=p.optDouble("lon");
                 if(Math.abs(lat)>90 || Math.abs(lon)>180)continue;
                 pins.add(Feature.fromGeometry(Point.fromLngLat(lon,lat)));
+                stopPositions.add(new LatLng(lat,lon));
             }
             Style style=map.getStyle();
             if(style==null)return;
@@ -314,7 +351,7 @@ public class RouteMapActivity extends Activity {
                     bp.setMargins(0,0,dp(9),0);
                     stopItems.addView(b,bp);
                     b.setOnClickListener(v->{
-                        selectedLat=lat;selectedLon=lon;
+                        selectStop(lat,lon);
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat,lon),18.0),700);
                         subtitle.setText(label);
                         voice.say("Показываю остановку на карте.");
@@ -325,7 +362,9 @@ public class RouteMapActivity extends Activity {
 
             if(fit && !cameraSet){
                 cameraSet=true;
-                if(seen.isEmpty()){
+                if(Double.isFinite(selectedLat) && Double.isFinite(selectedLon)){
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(selectedLat,selectedLon),18));
+                }else if(seen.isEmpty()){
                     // Neutral initial center until the first position is recorded.
                     map.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(50.290,127.535),11));
                 }else if(seen.size()==1){
