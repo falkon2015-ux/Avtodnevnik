@@ -183,6 +183,30 @@ public class Store extends SQLiteOpenHelper {
                     s.put("addressSource",c.getString(11));
                     s.put("addressDistance",c.getDouble(12));stops.put(s);}}
             j.put("stops",stops);
+            // All intervals in one calendar day, not just the latest active/closed run.
+            try(Cursor c=db.rawQuery(
+                "SELECT COALESCE(SUM(km),0),COALESCE(SUM(moving_ms),0) FROM trips "+
+                "WHERE started>=? AND started<?",
+                new String[]{""+today[0],""+today[1]})){
+                if(c.moveToFirst()){
+                    j.put("distance",c.getDouble(0));
+                    j.put("moving",c.getLong(1)/60000);
+                }
+            }
+            try(Cursor c=db.rawQuery(
+                "SELECT COALESCE(SUM(COALESCE(s.departure,?)-s.arrival),0) FROM stops s "+
+                "JOIN trips t ON t.id=s.trip_id "+
+                "WHERE t.started>=? AND t.started<? AND s.excluded=0",
+                new String[]{""+System.currentTimeMillis(),""+today[0],""+today[1]})){
+                if(c.moveToFirst())j.put("stopped",c.getLong(0)/60000);
+            }
+            try(Cursor c=db.rawQuery(
+                "SELECT COALESCE(SUM(COALESCE(b.ended,?)-b.started),0) FROM breaks b "+
+                "JOIN trips t ON t.id=b.trip_id "+
+                "WHERE t.started>=? AND t.started<?",
+                new String[]{""+System.currentTimeMillis(),""+today[0],""+today[1]})){
+                if(c.moveToFirst())j.put("break_minutes",c.getLong(0)/60000);
+            }
         }catch(Exception ignored){}return j;
     }
 
@@ -293,6 +317,35 @@ public class Store extends SQLiteOpenHelper {
             }
         }
     }
+
+    /** Chronological trips for every work interval on the phone's current calendar day. */
+    public JSONObject dayTimeline(){
+        String day=WaybillEngine.today();
+        JSONObject report=WaybillEngine.report(this,day);
+        JSONArray excluded=new JSONArray();
+        try{
+            long[] range=WaybillEngine.dayRange(day);
+            try(Cursor c=getReadableDatabase().rawQuery(
+                "SELECT s.id,s.arrival,s.note,s.lat,s.lon FROM stops s "+
+                "JOIN trips t ON t.id=s.trip_id "+
+                "WHERE t.started>=? AND t.started<? AND s.excluded=1 "+
+                "ORDER BY s.arrival",
+                new String[]{""+range[0],""+range[1]})){
+                while(c.moveToNext()){
+                    JSONObject e=new JSONObject();
+                    e.put("id",c.getLong(0));
+                    e.put("arrival",fmt(c.getLong(1)));
+                    e.put("note",c.getString(2));
+                    e.put("lat",c.getDouble(3));
+                    e.put("lon",c.getDouble(4));
+                    excluded.put(e);
+                }
+            }
+            report.put("excludedStops",excluded);
+        }catch(Exception ignored){}
+        return report;
+    }
+
     public org.json.JSONArray reportDays(){return WaybillEngine.days(this);}
     public org.json.JSONObject dayReport(String day){return WaybillEngine.report(this,day);}
 
