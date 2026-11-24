@@ -119,6 +119,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void previewVoice(){runOnUiThread(()->voice.preview());}
         @JavascriptInterface public void gpsWarning(){runOnUiThread(()->voice.say("Внимание. Давно нет сигнала GPS. Проверьте геолокацию."));}
         @JavascriptInterface public String state(){return store.summary().toString();}
+        @JavascriptInterface public String dayTimeline(){return store.dayTimeline().toString();}
+        @JavascriptInterface public void openPlace(String provider,double lat,double lon){
+            runOnUiThread(()->MapLinks.open(MainActivity.this,provider,lat,lon));
+        }
+        @JavascriptInterface public void showPlace(double lat,double lon){
+            runOnUiThread(()->{
+                if(!Double.isFinite(lat)||!Double.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||(lat==0&&lon==0))return;
+                Intent i=new Intent(MainActivity.this,RouteMapActivity.class);
+                i.putExtra("selected_lat",lat);i.putExtra("selected_lon",lon);
+                startActivity(i);
+            });
+        }
         @JavascriptInterface public void start(){runOnUiThread(()->MainActivity.this.start());}
         @JavascriptInterface public void pause(){runOnUiThread(()->{if(store.active()!=0 && !store.paused()){store.pause();voice.say("Ожидание задания. Учёт пробега приостановлен.");}refresh();});}
         @JavascriptInterface public void resume(){runOnUiThread(()->{if(store.paused()){store.resume();voice.say("Запись маршрута продолжена.");}refresh();});}
@@ -143,7 +155,26 @@ public class MainActivity extends Activity {
 *{box-sizing:border-box}body{margin:0;background:#eff5f5;color:var(--body);font:15px system-ui,-apple-system,Arial,sans-serif}
 main{max-width:620px;margin:auto;padding:16px 16px 60px}.hero{position:relative;overflow:hidden;color:white;border-radius:28px;padding:24px 23px 26px;background:linear-gradient(120deg,#245a66,#0e3041);box-shadow:0 10px 22px #143f4b20;min-height:222px}
 .hero:after{content:' ';width:190px;height:190px;border:2px dashed #77bfb655;border-radius:50%;position:absolute;right:-86px;top:20px;transform:rotate(22deg)}.brand{font-size:12px;font-weight:800;letter-spacing:2px;color:#aef1db}.hero h1{font-size:30px;line-height:1.12;margin:25px 0 13px;color:white}.hero p{font-size:13px;color:#d1e6eb;line-height:1.5;margin:0}.pill{display:inline-flex;align-items:center;gap:9px;padding:9px 13px;border-radius:22px;background:#ffffff19;margin-top:22px;font-size:13px;font-weight:650}.dot{width:9px;height:9px;border-radius:50%;background:#9be7d0}.on .dot{animation:pulse 1.6s infinite;background:#8fffcb}@keyframes pulse{50%{box-shadow:0 0 0 8px #a8ffe41c}}
-h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{border-radius:20px;padding:18px 14px;min-height:125px;background:white;box-shadow:0 3px 12px #1a40410b}.stat:nth-child(1){background:#e0f5ec}.stat:nth-child(2){background:#e5effa}.stat:nth-child(3){background:#ffefdf}.stat:nth-child(4){background:#efecfa}.label{font-size:10px;font-weight:800;letter-spacing:1px;color:#607c81}.value{font-size:24px;font-weight:800;color:#153c4a;margin-top:18px}.card{background:white;padding:20px;border-radius:23px;box-shadow:0 4px 17px #173f4c10;margin-top:16px}.card h3{margin:0 0 8px;font-size:18px;color:#183947}.muted{color:var(--muted);font-size:13px;line-height:1.45}.primary{background:#a9ead1;border:none;color:#123d37;font-weight:800;font-size:17px;padding:18px;border-radius:17px;width:100%;margin-top:18px;box-shadow:0 4px 0 #83c8ae}.voicebtn{border:none;border-radius:14px;background:#ddf5ea;color:#145343;font-weight:800;padding:13px 15px;font-size:14px;cursor:pointer}.voicebtn.off{background:#edf1f3;color:#657d82}.voice-settings{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.breakbutton{border:none;background:#fff0ce;color:#735018;font-weight:800;font-size:16px;padding:16px;border-radius:17px;width:100%;margin-top:13px}.breakbutton.running{background:#bbefda;color:#164f40}.breakbutton:disabled{opacity:.57;filter:grayscale(.35);box-shadow:none;cursor:not-allowed}.primary.stop{background:#ffdad2;color:#753a37;box-shadow:0 4px 0 #edb8ab}.button{border:none;background:#edf5f2;border-radius:14px;color:#24596b;font-weight:700;padding:11px 14px;font-size:13px;cursor:pointer}.stoprow{padding:13px 0;border-top:1px solid #e9f1ef}.stophead{display:flex;justify-content:space-between;gap:8px;align-items:center}.stoprow b{color:#1c4651}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}.warn{color:#a35335;background:#fff2e7;padding:12px;border-radius:12px;font-size:13px;margin-top:12px;display:none}.mapbox{background:#e7f1f0;border-radius:16px;overflow:hidden;margin:14px 0 8px;height:175px;position:relative}.mapbox svg{width:100%;height:100%}.mapbox span{position:absolute;bottom:9px;left:12px;font-size:11px;color:#5b7e83}.settings{display:flex;gap:14px;align-items:center;margin:12px 0}.settings input{border:1px solid #d6e5e3;background:#f6fbf9;border-radius:11px;padding:10px;width:90px;font-size:16px;color:#164453;font-weight:700}small{font-size:11px;color:#84989b}.footer{text-align:center;margin:24px 0;color:#829598;font-size:11px}
+h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{border-radius:20px;padding:18px 14px;min-height:125px;background:white;box-shadow:0 3px 12px #1a40410b}.stat:nth-child(1){background:#e0f5ec}.stat:nth-child(2){background:#e5effa}.stat:nth-child(3){background:#ffefdf}.stat:nth-child(4){background:#efecfa}.label{font-size:10px;font-weight:800;letter-spacing:1px;color:#607c81}.value{font-size:24px;font-weight:800;color:#153c4a;margin-top:18px}.card{background:white;padding:20px;border-radius:23px;box-shadow:0 4px 17px #173f4c10;margin-top:16px}.card h3{margin:0 0 8px;font-size:18px;color:#183947}.muted{color:var(--muted);font-size:13px;line-height:1.45}.primary{background:#a9ead1;border:none;color:#123d37;font-weight:800;font-size:17px;padding:18px;border-radius:17px;width:100%;margin-top:18px;box-shadow:0 4px 0 #83c8ae}.voicebtn{border:none;border-radius:14px;background:#ddf5ea;color:#145343;font-weight:800;padding:13px 15px;font-size:14px;cursor:pointer}.voicebtn.off{background:#edf1f3;color:#657d82}.voice-settings{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.breakbutton{border:none;background:#fff0ce;color:#735018;font-weight:800;font-size:16px;padding:16px;border-radius:17px;width:100%;margin-top:13px}.breakbutton.running{background:#bbefda;color:#164f40}.breakbutton:disabled{opacity:.57;filter:grayscale(.35);box-shadow:none;cursor:not-allowed}.primary.stop{background:#ffdad2;color:#753a37;box-shadow:0 4px 0 #edb8ab}.button{border:none;background:#edf5f2;border-radius:14px;color:#24596b;font-weight:700;padding:11px 14px;font-size:13px;cursor:pointer}.stoprow{padding:13px 0;border-top:1px solid #e9f1ef}
+.timeline{position:relative;padding-left:13px;margin-top:14px}
+.periodTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0 13px -13px;background:#eff7f4;border-radius:15px;padding:12px 13px;font-weight:800;color:#194b52}
+.periodTitle small{font-size:11px;color:#597a78;font-weight:600}
+.tline-item{position:relative;border-left:2px solid #b9e0d4;margin-left:10px;padding:0 0 19px 22px}
+.tline-item:before{content:'';position:absolute;left:-8px;top:50px;width:12px;height:12px;border-radius:50%;border:2px solid white;background:#2ab596;box-shadow:0 0 0 2px #8fd2bc}
+.leg-distance{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#2d6670;background:#eaf5f1;padding:9px 12px;border-radius:12px;margin:1px 0 10px;font-weight:700}
+.point-card{border:1px solid #e4eeeb;border-radius:17px;padding:13px;background:#fff;box-shadow:0 3px 9px #193d4909}
+.pointHead{display:flex;align-items:center;justify-content:space-between;gap:7px}
+.pointHead b{font-size:14px;color:#164555}
+.pointHead span{font-size:11px;color:#7b9090}
+.pointAddress{margin:9px 0;color:#38636b;line-height:1.45;font-size:13px}
+.pointTiming{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.timechip{background:#f1f6f5;color:#346671;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:700}
+.timechip.park{background:#fff0d8;color:#875821}
+.pointActions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.pointActions button{background:#eef5f4;color:#1f6070;border:0;padding:9px 10px;border-radius:10px;font-size:11px;font-weight:750}
+.pointActions button.yandex{background:#fff0e9;color:#934a2a}
+.pointActions button.twogis{background:#e3f5e7;color:#256a41}
+.emptyTimeline{color:#81969a;text-align:center;padding:19px 5px;font-size:13px}.stophead{display:flex;justify-content:space-between;gap:8px;align-items:center}.stoprow b{color:#1c4651}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}.warn{color:#a35335;background:#fff2e7;padding:12px;border-radius:12px;font-size:13px;margin-top:12px;display:none}.mapbox{background:#e7f1f0;border-radius:16px;overflow:hidden;margin:14px 0 8px;height:175px;position:relative}.mapbox svg{width:100%;height:100%}.mapbox span{position:absolute;bottom:9px;left:12px;font-size:11px;color:#5b7e83}.settings{display:flex;gap:14px;align-items:center;margin:12px 0}.settings input{border:1px solid #d6e5e3;background:#f6fbf9;border-radius:11px;padding:10px;width:90px;font-size:16px;color:#164453;font-weight:700}small{font-size:11px;color:#84989b}.footer{text-align:center;margin:24px 0;color:#829598;font-size:11px}
 </style></head><body><main>
 <div id="hero" class="hero"><div class="brand">◇ АВТОДНЕВНИК</div><h1>Ваш день —<br>под контролем</h1><p>Маршрут, остановки и пробег<br>без лишних действий</p><div id="status" class="pill"><i class="dot"></i> Запись выключена</div></div>
 <h2>Обзор дня</h2><div class="stats">
@@ -153,7 +184,11 @@ h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-te
 <div class="stat"><div class="label">ТОПЛИВО · ОЦЕНКА</div><div id="fuel" class="value">0 ₽</div></div></div>
 <div class="card"><h3>Управление записью</h3><div id="prompt" class="muted">Утром нажмите кнопку и оставьте телефон на зарядке в автомобиле.</div><button id="go" class="primary" onclick="toggle()">▶ Начать рабочий день</button><button id="pause" class="breakbutton" disabled onclick="togglePause()">☕ Перекур / Ожидание задания</button><div id="pauseHint" class="muted" style="margin-top:8px">Кнопка станет активной после начала рабочего дня.</div><div id="breaktime" class="muted" style="margin-top:10px">Перерывы: 0 мин</div><div class="muted" style="margin-top:14px">GPS работает при выключенном экране. Данные остаются на устройстве.</div><div id="warning" class="warn"></div></div>
 <div class="card"><h3>Маршрут дня</h3><div class="muted">Улицы, полный GPS-маршрут и точки стоянок на интерактивной карте</div><div class="mapbox"><svg viewBox="0 0 330 175" id="route"><path d="M20 140Q90 70 135 110T300 22" fill="none" stroke="#b3cecc" stroke-width="3" stroke-dasharray="6 6"/></svg><span>Мини-схема GPS-трека</span></div><button class="button" onclick="openMap()">🗺 Открыть карту маршрута</button></div>
-<div class="card"><h3>Остановки</h3><div class="muted">Фиксируются после пяти минут в радиусе 40 м. Ложные можно исключить.</div><div id="stops" style="margin-top:14px" class="muted">Остановок пока нет</div></div>
+<div class="card"><h3>Маршрут и стоянки за сегодня</h3>
+<div class="muted">По порядку: откуда выехали, куда приехали, время прибытия и отъезда, длительность стоянки и расстояние между точками по GPS. Все рабочие периоды за день.</div>
+<div id="timeline" class="timeline"><div class="emptyTimeline">Загрузка маршрутов...</div></div>
+<div class="muted" style="margin-top:10px">Откройте конкретную точку в Яндекс Картах или 2ГИС, чтобы посмотреть соседние здания. Автоматический адрес берётся из доступной геобазы, а не из этих сервисов.</div>
+<div id="excludedTimeline"></div></div>
 <div class="card"><h3>Путевой журнал: день и неделя</h3><div class="muted">Ближайший адрес в радиусе 40 м, семь отдельных дней и выгрузка недельного журнала в Excel (.xlsx).</div><button class="primary" onclick="Driver.openWaybill()">▦ Открыть путевой журнал</button><div class="muted" style="margin-top:12px">Можно экспортировать неделю в Excel и выбранный день в CSV.</div><div class="muted" id="todaySessions" style="margin-top:9px;font-weight:800;color:#1c6358">Сохранено рабочих периодов за сегодня: 0</div></div>
 <div class="card"><h3>Расход топлива</h3><div class="settings"><label>Л/100 км</label><input id="litres" type="number" min="1" max="40" step=".1" value="8"></div><div class="settings"><label>Цена за литр, ₽</label><input id="price" type="number" min="1" max="300" step=".1" value="65"></div><div class="muted">Оценка по пробегу. Простой с работающим мотором не учитывается.</div></div>
 <div class="card"><h3>🔊 Голосовые подсказки</h3>
@@ -163,7 +198,7 @@ h2{font-size:21px;color:#16384a;margin:25px 3px 14px}.stats{display:grid;grid-te
 <div class="muted" id="voiceFileStatus" style="margin-top:10px">Без записи используется системный голос Android.</div>
 <div class="muted" style="margin-top:10px">По умолчанию выключено. Используется русский голос, установленный на телефоне.</div></div>
 <div class="card"><h3>Отчёт</h3><p class="muted">Сводка последнего рабочего дня в формате CSV.</p><button class="button" onclick="Driver.exportCsv()">Экспортировать CSV ↗</button></div>
-<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.6.0</div></main>
+<div class="footer">АВТОДНЕВНИК · Тестовая версия 0.8.0</div></main>
 <script>
 let state={active:false,distance:0,moving:0,stopped:0,points:[],stops:[]};
 const el=id=>document.getElementById(id);
@@ -174,8 +209,8 @@ let gpsAlerted=false;
 function togglePause(){if(!state.active)return;if(state.paused)Driver.resume();else Driver.pause();setTimeout(refresh,350)}
 function openMap(){Driver.openMap()}
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function nameStop(id){const text=prompt('Название остановки:');if(text!==null){Driver.rename(String(id),text);setTimeout(refresh,250)}}
-function exclude(id,yes){Driver.exclude(String(id),yes);setTimeout(refresh,250)}
+function nameStop(id){const text=prompt('Название остановки:');if(text!==null){Driver.rename(String(id),text);setTimeout(()=>{refresh();refreshTimeline()},300)}}
+function exclude(id,yes){Driver.exclude(String(id),yes);setTimeout(()=>{refresh();refreshTimeline()},350)}
 function drawRoute(points){
 const svg=el('route');if(!points||points.length<2)return;
 const ps=points.map(p=>[p[1],p[0]]);const xs=ps.map(p=>p[0]),ys=ps.map(p=>p[1]);
@@ -183,6 +218,54 @@ const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.m
 const scale=Math.max(maxX-minX,maxY-minY,0.000001);const path=ps.reverse().map((p,i)=>(i?'L':'M')+(20+(p[0]-minX)/scale*290).toFixed(1)+' '+(155-(p[1]-minY)/scale*135).toFixed(1)).join(' ');
 svg.innerHTML='<path d="'+path+'" fill="none" stroke="#24a892" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>';
 }
+function refreshTimeline(){
+  try{
+    const report=JSON.parse(Driver.dayTimeline());
+    const periods=report.periods||[], rows=report.rows||[], excluded=report.excludedStops||[];
+    if(report.error){el('timeline').innerHTML='<div class="emptyTimeline">Ошибка журнала: '+esc(report.error)+'</div>';return}
+    if(!periods.length){
+      el('timeline').innerHTML='<div class="emptyTimeline">Сегодня ещё нет сохранённых рабочих периодов. После начала записи они появятся здесь.</div>';
+    }else{
+      let cards='';
+      periods.forEach(p=>{
+        const legs=rows.filter(r=>Number(r.period)===Number(p.number));
+        cards+='<div class="periodTitle"><span>Рабочий период №'+p.number+'</span><small>'+esc(p.started)+' — '+esc(p.finished)+'</small></div>';
+        if(!legs.length){cards+='<div class="emptyTimeline">Нет точек GPS за этот период</div>';return}
+        legs.forEach((r,i)=>{
+          const point=r.to||{};
+          const lat=Number(point.lat),lon=Number(point.lon);
+          const valid=Number.isFinite(lat)&&Number.isFinite(lon)&&!(lat===0&&lon===0);
+          const isStop=point.kind==='stop';
+          const address=point.label||'Адрес рядом не определён';
+          const title=isStop?(r.note||'Стоянка '+(i+1)):(r.ongoing?'Текущая точка':'Конец рабочего периода');
+          const km=Number(r.km||0).toFixed(2).replace('.',',');
+          const leave=isStop?(r.stopDeparture||'—'):null;
+          cards+='<div class="tline-item">'+
+            '<div class="leg-distance">🚙 От предыдущей точки · '+km+' км по GPS</div>'+
+            '<div class="point-card">'+
+            '<div class="pointHead"><b>'+esc(title)+'</b><span>№'+r.number+'</span></div>'+
+            '<div class="pointAddress">'+esc(address)+'</div>'+
+            '<div class="pointTiming"><span class="timechip">↘ Прибытие '+esc(r.arrival)+'</span>'+
+            (isStop?'<span class="timechip">↗ Отъезд '+esc(leave)+'</span><span class="timechip park">Стоянка '+fmt(r.stopMinutes||0)+'</span>':'')+
+            '</div>'+
+            (valid?'<div class="pointActions"><button onclick="openSavedPoint('+lat+','+lon+')">🗺 На карте</button>'+
+             '<button class="yandex" onclick="externalPoint(\\'yandex\\','+lat+','+lon+')">Яндекс Карты</button>'+
+             '<button class="twogis" onclick="externalPoint(\\'2gis\\','+lat+','+lon+')">2ГИС</button>'+
+             (isStop?'<button onclick="nameStop('+point.id+')">✎ Назвать</button><button onclick="exclude('+point.id+',true)">Исключить</button>':'')+'</div>':
+             '<div class="muted" style="margin-top:9px">Недостаточно GPS-данных для открытия точки</div>')+
+            '</div></div>';
+        });
+      });
+      el('timeline').innerHTML=cards;
+    }
+    el('excludedTimeline').innerHTML=excluded.length?
+      '<div class="muted" style="margin-top:14px">Исключённые остановки</div>'+
+      excluded.map(x=>'<div class="stoprow">'+esc(x.note||'Остановка')+' · '+esc(x.arrival)+
+        ' <button class="button" onclick="exclude('+x.id+',false)">Вернуть</button></div>').join(''):'';
+  }catch(e){el('timeline').innerHTML='<div class="emptyTimeline">Не удалось загрузить остановки</div>'}
+}
+function openSavedPoint(lat,lon){Driver.showPlace(lat,lon)}
+function externalPoint(provider,lat,lon){Driver.openPlace(provider,lat,lon)}
 function refresh(){
 try{state=JSON.parse(Driver.state());el('km').textContent=Number(state.distance||0).toFixed(1).replace('.',',')+' км';
 el('todaySessions').textContent='Сохранено рабочих периодов за сегодня: '+(state.todaySessions||0);el('moving').textContent=fmt(state.moving||0);el('stopped').textContent=fmt(state.stopped||0);
@@ -200,13 +283,12 @@ const warning=el('warning');warning.style.display=state.active&&!state.paused&&s
 const gpsLost=state.active&&!state.paused&&state.gpsAge>120;
 if(gpsLost&&!gpsAlerted){gpsAlerted=true;Driver.gpsWarning();}
 if(!gpsLost)gpsAlerted=false;
-const stops=state.stops||[];el('stops').innerHTML=stops.length?stops.map(s=>'<div class="stoprow" style="opacity:'+(s.excluded?'.5':'1')+'"><div class="stophead"><b>'+esc(s.note||'Остановка')+'</b><small>'+esc(s.arrival)+'</small></div><div class="muted">'+s.duration+' мин · '+esc(s.address|| (s.addressStatus===1?'Поиск адреса...':'Адрес рядом не найден'))+(s.addressSource&&s.addressDistance>=0?' · '+esc(s.addressSource)+' · '+Math.round(s.addressDistance)+' м':'')+(s.excluded?' · исключена':'')+'</div><div class="actions"><button class="button" onclick="nameStop('+s.id+')">✎ Назвать</button><button class="button" onclick="exclude('+s.id+','+(!s.excluded)+')">'+(s.excluded?'Вернуть':'Исключить')+'</button></div></div>').join(''):'Остановок пока нет';
 drawRoute(state.points);
 }catch(e){console.log(e)}
 }
 el('litres').value=localStorage.getItem('litres')||'8';el('price').value=localStorage.getItem('price')||'65';
 ['litres','price'].forEach(id=>el(id).addEventListener('input',()=>{localStorage.setItem(id,el(id).value);refresh()}));
-setInterval(refresh,4000);refresh();
+setInterval(refresh,4000);setInterval(refreshTimeline,15000);refresh();refreshTimeline();
 </script></body></html>
 """;
 }
